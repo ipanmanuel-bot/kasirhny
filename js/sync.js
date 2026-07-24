@@ -36,13 +36,17 @@ async function checkSession() {
 }
 
 async function authSignIn(email, password) {
-  if (!supaEnabled || !supabase) return { error: 'Supabase tidak tersedia' };
+  if (!supaEnabled || !supabase) return { error: 'Koneksi ke Supabase gagal. Cek URL dan API key.' };
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const tout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000));
+    const req  = supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await Promise.race([req, tout]);
     if (error) return { error: error.message };
     currentUserId = data.user.id;
     return { user: data.user };
-  } catch (e) { return { error: e.message }; }
+  } catch (e) {
+    return { error: e.message === 'timeout' ? 'Koneksi timeout. Cek apakah project Supabase aktif (tidak di-pause).' : e.message };
+  }
 }
 
 async function authSignUp(email, password) {
