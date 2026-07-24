@@ -649,7 +649,7 @@
 ═══════════════════════════════════════════════════════ -->
 
 <!-- Email/password screen (gate pertama) -->
-<div id="scr-email" class="scr" style="display:none">
+<div id="scr-email" class="scr">
   <div class="scr-logo">Kasir<span>HnY</span></div>
   <div class="scr-sub">Sistem Kasir Restoran &amp; Cafe</div>
   <!-- Masuk -->
@@ -1507,25 +1507,20 @@
       observer.observe(cartPanel, { attributes: true, attributeFilter: ['class'] });
     }
 
-    // Check existing session → auto-login atau tampil email screen
-    (async () => {
-      try {
-        loadLocalSettings(); // selalu muat lokal dulu sebagai fallback
-        const user = await checkSession();
-        if (user) {
-          // Session masih valid → sync dari cloud lalu ke role picker
-          try { await supaLoadAll(); } catch(e) { console.warn('[init] supaLoadAll failed:', e); }
-          goLogin();
-        } else {
-          showEmailLogin();
-        }
-      } catch (e) {
-        console.warn('[init] Error:', e);
-        // Fallback: tampil email screen walau ada error
-        showEmailLogin();
+    // Muat data lokal dulu, tampilkan email screen
+    loadLocalSettings();
+    showEmailSignin();
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    // Cek session di background — jika ada, skip email screen
+    checkSession().then(user => {
+      if (user) {
+        supaLoadAll().catch(() => {}).finally(() => goLogin());
       }
-      if (typeof lucide !== 'undefined') lucide.createIcons();
-    })();
+      // Jika tidak ada user, scr-email sudah tampil sebagai default
+    }).catch(() => {
+      // Session check gagal — scr-email sudah tampil, user bisa login manual
+    });
   });
 </script>
 </body>
