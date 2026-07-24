@@ -583,6 +583,10 @@
       #bnav { display: flex; }
       #mc { margin-left: 0; padding: 64px 12px 72px; }
 
+      /* Staff mode: sembunyikan bottom nav & padding bottom */
+      body.is-staff #bnav { display: none; }
+      body.is-staff #mc { padding-bottom: 12px; }
+
       /* Bottom nav — bisa scroll horizontal jika perlu */
       #bnav { overflow-x: auto; }
       .bnav-item { padding: 6px 10px; min-width: 52px; font-size: 9px; }
@@ -1000,6 +1004,9 @@
 
       <!-- Menu Items Panel -->
       <div id="menu-item-panel">
+        <div style="margin-bottom:12px">
+          <input type="search" id="menu-search" class="form-input" placeholder="Cari menu..." oninput="onMenuSearch(this.value)" style="width:100%">
+        </div>
         <div class="filter-row" id="menu-cat-filter"></div>
         <div class="card">
           <div id="menu-item-list"></div>

@@ -38,6 +38,7 @@ let ordPage = 1;
 // Menu management tabs
 let menuTab = 'menu'; // 'menu' | 'cat'
 let menuFilterCat = 'all';
+let menuSearch = '';
 
 // Edit states
 let editItemId = null;
@@ -316,8 +317,23 @@ function _launchApp() {
   _hideAllScr();
   g('app').style.display = 'flex';
   _updateUserBadge();
-  goPage('dashboard');
+  _applyRoleAccess();
+  // Karyawan langsung ke POS, owner ke dashboard
+  goPage(curRole === 'staff' ? 'pos' : 'dashboard');
   if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function _applyRoleAccess() {
+  const isStaff = curRole === 'staff';
+  // Toggle class di body untuk mobile CSS
+  document.body.classList.toggle('is-staff', isStaff);
+  // Nav item yang boleh diakses karyawan (hanya POS)
+  const staffAllowed = ['pos'];
+  document.querySelectorAll('#sbnav .ni, #bnav .bnav-item').forEach(el => {
+    const page = el.getAttribute('data-page');
+    if (!page) return;
+    el.style.display = (isStaff && !staffAllowed.includes(page)) ? 'none' : '';
+  });
 }
 
 function _updateUserBadge() {
@@ -1124,6 +1140,11 @@ function renderCatList() {
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
+function onMenuSearch(val) {
+  menuSearch = (val || '').trim().toLowerCase();
+  renderMenuList();
+}
+
 function renderMenuList() {
   const el = g('menu-item-list');
   if (!el) return;
@@ -1135,10 +1156,13 @@ function renderMenuList() {
       menuCats.map(c => `<button class="filter-btn ${menuFilterCat === c.id ? 'on' : ''}" onclick="setMenuCatFilter('${c.id}')">${esc(c.name)}</button>`).join('');
   }
 
-  const filtered = menuFilterCat === 'all' ? menuItems : menuItems.filter(m => m.catId === menuFilterCat);
+  let filtered = menuFilterCat === 'all' ? menuItems : menuItems.filter(m => m.catId === menuFilterCat);
+  if (menuSearch) {
+    filtered = filtered.filter(m => (m.name || '').toLowerCase().includes(menuSearch) || (m.desc || '').toLowerCase().includes(menuSearch));
+  }
 
   if (!filtered.length) {
-    el.innerHTML = '<div class="empty-state"><p>Belum ada menu</p></div>';
+    el.innerHTML = '<div class="empty-state"><p>' + (menuSearch ? 'Tidak ada menu cocok dengan pencarian' : 'Belum ada menu') + '</p></div>';
     return;
   }
 
