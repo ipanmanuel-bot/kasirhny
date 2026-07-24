@@ -4,20 +4,19 @@
 const SUPABASE_URL = 'https://eimqoidhdyuqpbpmlkvz.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpbXFvaWRoZHl1cXBicG1sa3Z6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NzM0NzcsImV4cCI6MjEwMDQ0OTQ3N30.zSNPtFuRYZmvjC2259iJFBM2cUPPA7az03FCKAsa_6Q';
 
-let supabase = null;
+let sbClient = null;
 let supaEnabled = false;
 let currentUserId = null;
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 function initSync() {
-  // Muat kode toko dari localStorage sebagai user_id
   const saved = localStorage.getItem('cprs_code');
   if (saved) currentUserId = saved;
 
   if (typeof window.supabase !== 'undefined') {
     try {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       supaEnabled = true;
     } catch (e) {
       console.warn('[sync] Supabase init failed:', e);
@@ -44,9 +43,9 @@ function clearStoreCode() {
 // ─── Supabase helpers ────────────────────────────────────────────────────────
 
 async function sbUpsert(table, data) {
-  if (!supaEnabled || !supabase) return;
+  if (!supaEnabled || !sbClient) return;
   try {
-    const { error } = await supabase.from(table).upsert(data, { onConflict: 'id' });
+    const { error } = await sbClient.from(table).upsert(data, { onConflict: 'id' });
     if (error) console.warn('[sync] upsert error', table, error.message);
   } catch (e) {
     console.warn('[sync] sbUpsert exception', e);
@@ -54,9 +53,9 @@ async function sbUpsert(table, data) {
 }
 
 async function sbFetch(table) {
-  if (!supaEnabled || !supabase) return null;
+  if (!supaEnabled || !sbClient) return null;
   try {
-    const { data, error } = await supabase
+    const { data, error } = await sbClient
       .from(table)
       .select('*')
       .eq('user_id', currentUserId);
@@ -69,9 +68,9 @@ async function sbFetch(table) {
 }
 
 async function sbDelete(table, id) {
-  if (!supaEnabled || !supabase) return;
+  if (!supaEnabled || !sbClient) return;
   try {
-    const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', currentUserId);
+    const { error } = await sbClient.from(table).delete().eq('id', id).eq('user_id', currentUserId);
     if (error) console.warn('[sync] delete error', table, error.message);
   } catch (e) {
     console.warn('[sync] sbDelete exception', e);
