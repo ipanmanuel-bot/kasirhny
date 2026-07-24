@@ -450,17 +450,17 @@
     }
     .cat-pill.on { background: var(--p); border-color: var(--p); color: #fff; }
     .cat-pill:hover:not(.on) { border-color: var(--p); color: var(--p); }
-    .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+    .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
     .menu-card {
       background: var(--ca); border: 1.5px solid var(--b1); border-radius: 14px;
-      padding: 12px 10px; cursor: pointer; transition: .15s; text-align: center;
-      position: relative;
+      padding: 18px 14px; cursor: pointer; transition: .15s; text-align: center;
+      position: relative; display: flex; flex-direction: column; justify-content: center;
+      min-height: 100px;
     }
     .menu-card:hover { border-color: var(--p); box-shadow: 0 0 0 3px var(--p20); }
     .menu-card.in-cart { border-color: var(--p); background: var(--pl); }
-    .menu-card-emoji { font-size: 32px; margin-bottom: 6px; line-height: 1; }
-    .menu-card-name { font-weight: 600; font-size: 12px; margin-bottom: 3px; }
-    .menu-card-price { font-size: 12px; color: var(--p); font-weight: 700; }
+    .menu-card-name { font-weight: 700; font-size: 16px; margin-bottom: 6px; line-height: 1.25; color: var(--t1); }
+    .menu-card-price { font-size: 13px; color: var(--p); font-weight: 700; }
     .menu-card-badge {
       position: absolute; top: -6px; right: -6px; width: 20px; height: 20px;
       border-radius: 50%; background: var(--p); color: #fff; font-size: 11px; font-weight: 700;
@@ -1193,10 +1193,6 @@
           <label class="form-label">Kategori</label>
           <select id="item-cat" class="form-input"></select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Emoji</label>
-          <input type="text" id="item-emoji" class="form-input" placeholder="🍽">
-        </div>
       </div>
       <div class="form-group">
         <label class="form-label">Deskripsi (opsional)</label>
@@ -1218,15 +1214,9 @@
       <button class="mclose" onclick="closeModal('m-cat')">&#x2715;</button>
     </div>
     <div class="mbody">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Nama Kategori</label>
-          <input type="text" id="cat-name" class="form-input" placeholder="Mis: Makanan, Minuman...">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Emoji</label>
-          <input type="text" id="cat-emoji" class="form-input" placeholder="🍽">
-        </div>
+      <div class="form-group">
+        <label class="form-label">Nama Kategori</label>
+        <input type="text" id="cat-name" class="form-input" placeholder="Mis: Makanan, Minuman...">
       </div>
     </div>
     <div class="mfoot">

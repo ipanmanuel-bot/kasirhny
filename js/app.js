@@ -131,20 +131,20 @@ function getMonthStart() {
 
 function seedData() {
   menuCats = [
-    { id: 'cat1', name: 'Makanan', emoji: '🍽', order: 1 },
-    { id: 'cat2', name: 'Minuman', emoji: '🥤', order: 2 },
-    { id: 'cat3', name: 'Dessert', emoji: '🍰', order: 3 }
+    { id: 'cat1', name: 'Makanan', order: 1 },
+    { id: 'cat2', name: 'Minuman', order: 2 },
+    { id: 'cat3', name: 'Dessert', order: 3 }
   ];
   menuItems = [
-    { id: 'mn1', name: 'Nasi Goreng', price: 25000, catId: 'cat1', emoji: '🍳', desc: '', active: true },
-    { id: 'mn2', name: 'Ayam Bakar', price: 35000, catId: 'cat1', emoji: '🍗', desc: '', active: true },
-    { id: 'mn3', name: 'Mie Goreng', price: 22000, catId: 'cat1', emoji: '🍜', desc: '', active: true },
-    { id: 'mn4', name: 'Soto Ayam', price: 28000, catId: 'cat1', emoji: '🥣', desc: '', active: true },
-    { id: 'mn5', name: 'Es Teh Manis', price: 8000, catId: 'cat2', emoji: '🧋', desc: '', active: true },
-    { id: 'mn6', name: 'Kopi Hitam', price: 10000, catId: 'cat2', emoji: '☕', desc: '', active: true },
-    { id: 'mn7', name: 'Jus Jeruk', price: 15000, catId: 'cat2', emoji: '🍊', desc: '', active: true },
-    { id: 'mn8', name: 'Es Campur', price: 20000, catId: 'cat3', emoji: '🍧', desc: '', active: true },
-    { id: 'mn9', name: 'Puding', price: 12000, catId: 'cat3', emoji: '🍮', desc: '', active: true }
+    { id: 'mn1', name: 'Nasi Goreng', price: 25000, catId: 'cat1', desc: '', active: true },
+    { id: 'mn2', name: 'Ayam Bakar', price: 35000, catId: 'cat1', desc: '', active: true },
+    { id: 'mn3', name: 'Mie Goreng', price: 22000, catId: 'cat1', desc: '', active: true },
+    { id: 'mn4', name: 'Soto Ayam', price: 28000, catId: 'cat1', desc: '', active: true },
+    { id: 'mn5', name: 'Es Teh Manis', price: 8000, catId: 'cat2', desc: '', active: true },
+    { id: 'mn6', name: 'Kopi Hitam', price: 10000, catId: 'cat2', desc: '', active: true },
+    { id: 'mn7', name: 'Jus Jeruk', price: 15000, catId: 'cat2', desc: '', active: true },
+    { id: 'mn8', name: 'Es Campur', price: 20000, catId: 'cat3', desc: '', active: true },
+    { id: 'mn9', name: 'Puding', price: 12000, catId: 'cat3', desc: '', active: true }
   ];
   menuCtr = 10; catCtr = 4;
   promos = [{ id: 'pr1', name: 'Diskon Weekday', catId: 'all', discType: 'persen', discVal: 10, days: ['1', '2', '3', '4', '5'], from: '', to: '', active: true, note: '10% off setiap hari kerja' }];
@@ -927,10 +927,10 @@ function _setBuyType(type) {
 
 function _rebuildPromoItemSelects() {
   const itemOpts = menuItems.filter(m => m.active !== false)
-    .map(m => `<option value="${esc(m.id)}">${esc((m.emoji||'') + ' ' + m.name)}</option>`)
+    .map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`)
     .join('');
   ['promo-buy-item','promo-free-item'].forEach(id => { const el = g(id); if (el) el.innerHTML = itemOpts; });
-  const catOpts = menuCats.map(c => `<option value="${esc(c.id)}">${esc((c.emoji||'') + ' ' + c.name)}</option>`).join('');
+  const catOpts = menuCats.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
   const catSel = g('promo-buy-cat'); if (catSel) catSel.innerHTML = catOpts;
   _updatePromoBeliGratisPreview();
 }
@@ -1114,7 +1114,6 @@ function renderCatList() {
   }
   el.innerHTML = menuCats.map(c => `
     <div class="list-item">
-      <span class="list-item-emoji">${c.emoji || '📁'}</span>
       <span class="list-item-name">${esc(c.name)}</span>
       <div class="list-item-actions">
         <button class="icon-btn" onclick="openEditCat('${c.id}')"><i data-lucide="pencil" style="width:15px;height:15px"></i></button>
@@ -1147,7 +1146,6 @@ function renderMenuList() {
     const cat = menuCats.find(c => c.id === m.catId);
     return `
       <div class="list-item ${m.active ? '' : 'item-inactive'}">
-        <span class="list-item-emoji">${m.emoji || '🍽'}</span>
         <div class="list-item-info">
           <span class="list-item-name">${esc(m.name)}</span>
           <span class="list-item-sub">${cat ? esc(cat.name) : ''} &bull; ${fmt(m.price)}</span>
@@ -1174,7 +1172,6 @@ function setMenuCatFilter(catId) {
 function openAddCat() {
   editCatId = null;
   g('cat-name').value = '';
-  g('cat-emoji').value = '';
   g('m-cat-title').textContent = 'Tambah Kategori';
   openModal('m-cat');
 }
@@ -1184,20 +1181,18 @@ function openEditCat(id) {
   if (!c) return;
   editCatId = id;
   g('cat-name').value = c.name;
-  g('cat-emoji').value = c.emoji || '';
   g('m-cat-title').textContent = 'Edit Kategori';
   openModal('m-cat');
 }
 
 function saveCat() {
   const name = g('cat-name').value.trim();
-  const emoji = g('cat-emoji').value.trim() || '📁';
   if (!name) { toast('Isi nama kategori', 'err'); return; }
   if (editCatId) {
     const c = menuCats.find(x => x.id === editCatId);
-    if (c) { c.name = name; c.emoji = emoji; }
+    if (c) { c.name = name; }
   } else {
-    menuCats.push({ id: 'cat' + catCtr++, name, emoji, order: menuCats.length + 1 });
+    menuCats.push({ id: 'cat' + catCtr++, name, order: menuCats.length + 1 });
   }
   syncSettings();
   closeModal('m-cat');
@@ -1219,7 +1214,6 @@ function openAddItem() {
   editItemId = null;
   g('item-name').value = '';
   g('item-price').value = '';
-  g('item-emoji').value = '';
   g('item-desc').value = '';
   g('m-item-title').textContent = 'Tambah Menu';
   _buildItemCatOptions();
@@ -1232,7 +1226,6 @@ function openEditItem(id) {
   editItemId = id;
   g('item-name').value = m.name;
   g('item-price').value = m.price;
-  g('item-emoji').value = m.emoji || '';
   g('item-desc').value = m.desc || '';
   g('m-item-title').textContent = 'Edit Menu';
   _buildItemCatOptions(m.catId);
@@ -1251,7 +1244,6 @@ function saveMenuItem() {
   const name = g('item-name').value.trim();
   const price = parseInt(g('item-price').value) || 0;
   const catId = g('item-cat').value;
-  const emoji = g('item-emoji').value.trim() || '🍽';
   const desc = g('item-desc').value.trim();
 
   if (!name) { toast('Isi nama menu', 'err'); return; }
@@ -1260,9 +1252,9 @@ function saveMenuItem() {
 
   if (editItemId) {
     const m = menuItems.find(x => x.id === editItemId);
-    if (m) Object.assign(m, { name, price, catId, emoji, desc });
+    if (m) Object.assign(m, { name, price, catId, desc });
   } else {
-    menuItems.push({ id: 'mn' + menuCtr++, name, price, catId, emoji, desc, active: true });
+    menuItems.push({ id: 'mn' + menuCtr++, name, price, catId, desc, active: true });
   }
   syncSettings();
   closeModal('m-item');

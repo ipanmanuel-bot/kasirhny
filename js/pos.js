@@ -32,7 +32,7 @@ function renderPOSCatFilter() {
   el.innerHTML =
     `<button class="cat-pill ${posActiveCat === 'all' ? 'on' : ''}" onclick="setPOSCat('all')">Semua</button>` +
     menuCats.map(c =>
-      `<button class="cat-pill ${posActiveCat === c.id ? 'on' : ''}" onclick="setPOSCat('${c.id}')">${c.emoji ? c.emoji + ' ' : ''}${esc(c.name)}</button>`
+      `<button class="cat-pill ${posActiveCat === c.id ? 'on' : ''}" onclick="setPOSCat('${c.id}')">${esc(c.name)}</button>`
     ).join('');
 }
 
@@ -64,7 +64,6 @@ function renderPOSMenu() {
     const inCart = cart.find(c => c.id === m.id);
     return `
       <div class="menu-card ${inCart ? 'in-cart' : ''}" onclick="addToCart('${m.id}')">
-        <div class="menu-card-emoji">${m.emoji || '🍽'}</div>
         <div class="menu-card-name">${esc(m.name)}</div>
         <div class="menu-card-price">${fmt(m.price)}</div>
         ${inCart ? `<div class="menu-card-badge">${inCart.qty}</div>` : ''}
