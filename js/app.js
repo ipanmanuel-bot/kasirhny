@@ -165,103 +165,39 @@ function goLogin() {
 }
 
 function _hideAllScr() {
-  ['scr-email','scr-login','scr-opwd','scr-outlet','scr-staff','scr-pin'].forEach(id => {
+  ['scr-code','scr-login','scr-opwd','scr-outlet','scr-staff','scr-pin'].forEach(id => {
     const el = g(id); if (el) el.style.display = 'none';
   });
 }
 
-// ─── Email Auth ───────────────────────────────────────────────────────────────
+// ─── Kode Toko ────────────────────────────────────────────────────────────────
 
-function showEmailLogin() {
+function showCodeScreen() {
   g('app').style.display = 'none';
   _hideAllScr();
-  g('scr-email').style.display = 'flex';
-  showEmailSignin();
-  setTimeout(() => g('inp-email')?.focus(), 150);
+  const scr = g('scr-code'); if (scr) scr.style.display = 'flex';
+  setTimeout(() => g('inp-code')?.focus(), 150);
 }
 
-function showEmailSignin() {
-  g('scr-email-signin').style.display = '';
-  g('scr-email-signup').style.display = 'none';
-  _setEmailErr('');
-}
-
-function showEmailSignup() {
-  g('scr-email-signin').style.display = 'none';
-  g('scr-email-signup').style.display = '';
-  _setSignupErr('');
-  setTimeout(() => g('inp-reg-email')?.focus(), 100);
-}
-
-function _setEmailErr(msg) {
-  const el = g('scr-email-err');
-  if (!el) return;
+function _setCodeErr(msg) {
+  const el = g('scr-code-err'); if (!el) return;
   el.textContent = msg; el.style.display = msg ? '' : 'none';
 }
 
-function _setSignupErr(msg) {
-  const el = g('scr-signup-err');
-  if (!el) return;
-  el.textContent = msg; el.style.display = msg ? '' : 'none';
-}
-
-function _setBtnLoading(id, loading, label) {
-  const btn = g(id); if (!btn) return;
-  btn.disabled = loading;
-  btn.textContent = loading ? 'Memuat...' : label;
-}
-
-async function doEmailLogin() {
-  const email = g('inp-email')?.value.trim();
-  const pwd = g('inp-epwd')?.value;
-  _setEmailErr('');
-  if (!email || !pwd) { _setEmailErr('Isi email dan kata sandi'); return; }
-
-  // Debug: cek apakah Supabase siap
-  if (!supaEnabled || !supabase) {
-    _setEmailErr('Supabase belum terkoneksi. Coba refresh halaman.');
-    return;
-  }
-
-  _setBtnLoading('btn-email-login', true, 'Menghubungi server...');
-  _setEmailErr('Menghubungi Supabase...');
-  const res = await authSignIn(email, pwd);
-  _setBtnLoading('btn-email-login', false, 'Masuk');
-  _setEmailErr('');
-  if (res.error) { _setEmailErr('Error: ' + res.error); return; }
+function doEnterCode() {
+  const code = (g('inp-code')?.value || '').trim().toUpperCase();
+  if (!code || code.length < 4) { _setCodeErr('Kode minimal 4 karakter'); return; }
+  _setCodeErr('');
+  saveStoreCode(code);
   loadLocalSettings();
-  try { await supaLoadAll(); } catch(e) {}
+  supaLoadAll().catch(() => {});
   goLogin();
 }
 
-async function doEmailSignup() {
-  const email = g('inp-reg-email')?.value.trim();
-  const pwd = g('inp-reg-pwd')?.value;
-  const pwd2 = g('inp-reg-pwd2')?.value;
-  _setSignupErr('');
-  if (!email || !pwd) { _setSignupErr('Isi semua kolom'); return; }
-  if (pwd.length < 6) { _setSignupErr('Kata sandi minimal 6 karakter'); return; }
-  if (pwd !== pwd2) { _setSignupErr('Kata sandi tidak cocok'); return; }
-  _setBtnLoading('btn-email-signup', true, 'Daftar & Masuk');
-  const res = await authSignUp(email, pwd);
-  _setBtnLoading('btn-email-signup', false, 'Daftar & Masuk');
-  if (res.error) { _setSignupErr(res.error); return; }
-  if (res.needConfirm) {
-    _setSignupErr('');
-    g('scr-signup-err').style.display = '';
-    g('scr-signup-err').style.color = '#34d399';
-    g('scr-signup-err').textContent = 'Cek email kamu untuk konfirmasi, lalu masuk kembali.';
-    return;
-  }
-  loadLocalSettings();
-  await supaLoadAll();
-  goLogin();
-}
-
-async function doLogout() {
+function doLogout() {
   curRole = null; curStaff = null;
-  await authSignOut();
-  showEmailLogin();
+  clearStoreCode();
+  showCodeScreen();
 }
 
 function goOwnerLogin() {

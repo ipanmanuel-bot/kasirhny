@@ -11,6 +11,10 @@ let currentUserId = null;
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 function initSync() {
+  // Muat kode toko dari localStorage sebagai user_id
+  const saved = localStorage.getItem('cprs_code');
+  if (saved) currentUserId = saved;
+
   if (typeof window.supabase !== 'undefined') {
     try {
       supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -21,49 +25,19 @@ function initSync() {
   }
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
+// ─── Kode Toko ───────────────────────────────────────────────────────────────
 
-async function checkSession() {
-  if (!supaEnabled || !supabase) return null;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      currentUserId = session.user.id;
-      return session.user;
-    }
-  } catch (e) { console.warn('[auth] checkSession error:', e); }
-  return null;
+function getStoredCode() {
+  return localStorage.getItem('cprs_code') || null;
 }
 
-async function authSignIn(email, password) {
-  if (!supaEnabled || !supabase) return { error: 'Koneksi ke Supabase gagal. Cek URL dan API key.' };
-  try {
-    const tout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000));
-    const req  = supabase.auth.signInWithPassword({ email, password });
-    const { data, error } = await Promise.race([req, tout]);
-    if (error) return { error: error.message };
-    currentUserId = data.user.id;
-    return { user: data.user };
-  } catch (e) {
-    return { error: e.message === 'timeout' ? 'Koneksi timeout. Cek apakah project Supabase aktif (tidak di-pause).' : e.message };
-  }
+function saveStoreCode(code) {
+  localStorage.setItem('cprs_code', code);
+  currentUserId = code;
 }
 
-async function authSignUp(email, password) {
-  if (!supaEnabled || !supabase) return { error: 'Supabase tidak tersedia' };
-  try {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) return { error: error.message };
-    if (data.user && !data.session) return { needConfirm: true };
-    currentUserId = data.user.id;
-    return { user: data.user };
-  } catch (e) { return { error: e.message }; }
-}
-
-async function authSignOut() {
-  if (supaEnabled && supabase) {
-    await supabase.auth.signOut().catch(() => {});
-  }
+function clearStoreCode() {
+  localStorage.removeItem('cprs_code');
   currentUserId = null;
 }
 

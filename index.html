@@ -648,37 +648,17 @@
      LOGIN SCREENS
 ═══════════════════════════════════════════════════════ -->
 
-<!-- Email/password screen (gate pertama) -->
-<div id="scr-email" class="scr">
+<!-- Kode Toko screen -->
+<div id="scr-code" class="scr">
   <div class="scr-logo">Kasir<span>HnY</span></div>
   <div class="scr-sub">Sistem Kasir Restoran &amp; Cafe</div>
-  <!-- Masuk -->
-  <div class="scr-card" id="scr-email-signin">
-    <h2 id="scr-email-title">Masuk ke Akun</h2>
-    <label class="scr-label">Email</label>
-    <input id="inp-email" type="email" class="scr-input" placeholder="email@toko.com" autocomplete="email" onkeydown="if(event.key==='Enter')g('inp-epwd').focus()">
-    <label class="scr-label">Kata Sandi</label>
-    <input id="inp-epwd" type="password" class="scr-input" placeholder="Kata sandi" autocomplete="current-password" onkeydown="if(event.key==='Enter')doEmailLogin()">
-    <div id="scr-email-err" style="color:#f87171;font-size:12px;margin-bottom:8px;display:none"></div>
-    <button class="scr-btn scr-btn-primary" id="btn-email-login" onclick="doEmailLogin()">Masuk</button>
-    <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--t3)">
-      Belum punya akun? <span onclick="showEmailSignup()" style="color:var(--p);cursor:pointer;font-weight:600">Daftar</span>
-    </div>
-  </div>
-  <!-- Daftar -->
-  <div class="scr-card" id="scr-email-signup" style="display:none">
-    <h2>Buat Akun Baru</h2>
-    <label class="scr-label">Email</label>
-    <input id="inp-reg-email" type="email" class="scr-input" placeholder="email@toko.com" autocomplete="email">
-    <label class="scr-label">Kata Sandi</label>
-    <input id="inp-reg-pwd" type="password" class="scr-input" placeholder="Min. 6 karakter" autocomplete="new-password">
-    <label class="scr-label">Konfirmasi Kata Sandi</label>
-    <input id="inp-reg-pwd2" type="password" class="scr-input" placeholder="Ulangi kata sandi" onkeydown="if(event.key==='Enter')doEmailSignup()">
-    <div id="scr-signup-err" style="color:#f87171;font-size:12px;margin-bottom:8px;display:none"></div>
-    <button class="scr-btn scr-btn-primary" id="btn-email-signup" onclick="doEmailSignup()">Daftar &amp; Masuk</button>
-    <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--t3)">
-      Sudah punya akun? <span onclick="showEmailSignin()" style="color:var(--p);cursor:pointer;font-weight:600">Masuk</span>
-    </div>
+  <div class="scr-card">
+    <h2>Masukkan Kode Toko</h2>
+    <p style="color:var(--t3);font-size:13px;margin:0 0 18px">Buat kode unik untuk toko Anda. Gunakan kode yang sama di semua perangkat agar data tersinkron.</p>
+    <label class="scr-label">Kode Toko</label>
+    <input id="inp-code" type="text" class="scr-input" placeholder="Contoh: RESTOABC123" autocomplete="off" style="text-transform:uppercase;letter-spacing:.05em" onkeydown="if(event.key==='Enter')doEnterCode()" oninput="this.value=this.value.toUpperCase()">
+    <div id="scr-code-err" style="color:#f87171;font-size:12px;margin-bottom:8px;display:none"></div>
+    <button class="scr-btn scr-btn-primary" onclick="doEnterCode()">Masuk</button>
   </div>
 </div>
 
@@ -691,7 +671,7 @@
     <button class="scr-btn scr-btn-primary" onclick="goOwnerLogin()">Pemilik (Owner)</button>
     <button class="scr-btn" onclick="goStaffLogin()">Karyawan</button>
     <div style="text-align:center;margin-top:14px">
-      <span onclick="doLogout()" style="color:var(--t3);font-size:12px;cursor:pointer">Ganti Akun / Keluar</span>
+      <span onclick="doLogout()" style="color:var(--t3);font-size:12px;cursor:pointer">Ganti Kode Toko</span>
     </div>
   </div>
 </div>
@@ -1507,20 +1487,16 @@
       observer.observe(cartPanel, { attributes: true, attributeFilter: ['class'] });
     }
 
-    // Muat data lokal dulu, tampilkan email screen
+    initSync();
     loadLocalSettings();
-    showEmailSignin();
     if (typeof lucide !== 'undefined') lucide.createIcons();
 
-    // Cek session di background — jika ada, skip email screen
-    checkSession().then(user => {
-      if (user) {
-        supaLoadAll().catch(() => {}).finally(() => goLogin());
-      }
-      // Jika tidak ada user, scr-email sudah tampil sebagai default
-    }).catch(() => {
-      // Session check gagal — scr-email sudah tampil, user bisa login manual
-    });
+    if (getStoredCode()) {
+      supaLoadAll().catch(() => {});
+      goLogin();
+    } else {
+      showCodeScreen();
+    }
   });
 </script>
 </body>
