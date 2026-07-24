@@ -2,7 +2,7 @@
 // KasirHnY
 
 const SUPABASE_URL = 'https://eimqoidhdyuqpbpmlkvz.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_z_zDDwhodZaYFAXeyiWEQQ_6ET0zrPe';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpbXFvaWRoZHl1cXBicG1sa3Z6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NzM0NzcsImV4cCI6MjEwMDQ0OTQ3N30.zSNPtFuRYZmvjC2259iJFBM2cUPPA7az03FCKAsa_6Q';
 
 let supabase = null;
 let supaEnabled = false;
