@@ -216,13 +216,21 @@ async function doEmailLogin() {
   const pwd = g('inp-epwd')?.value;
   _setEmailErr('');
   if (!email || !pwd) { _setEmailErr('Isi email dan kata sandi'); return; }
-  _setBtnLoading('btn-email-login', true, 'Masuk');
+
+  // Debug: cek apakah Supabase siap
+  if (!supaEnabled || !supabase) {
+    _setEmailErr('Supabase belum terkoneksi. Coba refresh halaman.');
+    return;
+  }
+
+  _setBtnLoading('btn-email-login', true, 'Menghubungi server...');
+  _setEmailErr('Menghubungi Supabase...');
   const res = await authSignIn(email, pwd);
   _setBtnLoading('btn-email-login', false, 'Masuk');
-  if (res.error) { _setEmailErr(res.error); return; }
-  // Auth berhasil — muat data lalu tampilkan role picker
+  _setEmailErr('');
+  if (res.error) { _setEmailErr('Error: ' + res.error); return; }
   loadLocalSettings();
-  await supaLoadAll();
+  try { await supaLoadAll(); } catch(e) {}
   goLogin();
 }
 
