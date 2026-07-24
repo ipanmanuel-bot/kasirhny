@@ -43,12 +43,23 @@ function clearStoreCode() {
 // ─── Supabase helpers ────────────────────────────────────────────────────────
 
 async function sbUpsert(table, data) {
-  if (!supaEnabled || !sbClient) return;
+  if (!supaEnabled || !sbClient) {
+    if (typeof toast === 'function') toast('Supabase belum siap', 'err');
+    return;
+  }
+  if (!currentUserId) {
+    if (typeof toast === 'function') toast('Kode toko belum diset', 'err');
+    return;
+  }
   try {
     const { error } = await sbClient.from(table).upsert(data, { onConflict: 'id' });
-    if (error) console.warn('[sync] upsert error', table, error.message);
+    if (error) {
+      console.warn('[sync] upsert error', table, error);
+      if (typeof toast === 'function') toast('Sync gagal: ' + error.message, 'err');
+    }
   } catch (e) {
     console.warn('[sync] sbUpsert exception', e);
+    if (typeof toast === 'function') toast('Sync exception: ' + e.message, 'err');
   }
 }
 
