@@ -172,7 +172,7 @@
     #bnav {
       display: none; position: fixed; bottom: 0; left: 0; right: 0;
       background: var(--dk); border-top: 1px solid var(--dk3);
-      z-index: 200; height: 60px;
+      z-index: 195; height: 60px;
       align-items: center; justify-content: space-around;
     }
     .bnav-item {
@@ -586,6 +586,9 @@
       /* Staff mode: sembunyikan bottom nav & padding bottom */
       body.is-staff #bnav { display: none; }
       body.is-staff #mc { padding-bottom: 12px; }
+
+      /* Saat sidebar terbuka, sembunyikan bnav agar tombol logout tidak tertutup */
+      body:has(#sbnav.mob-open) #bnav { display: none; }
 
       /* Bottom nav — bisa scroll horizontal jika perlu */
       #bnav { overflow-x: auto; }
@@ -1285,21 +1288,33 @@
             <select id="promo-buy-cat" class="form-input" onchange="_updatePromoBeliGratisPreview()"></select>
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Jumlah Beli (X)</label>
-            <input type="number" id="promo-buy-qty" class="form-input" value="2" min="1" oninput="_updatePromoBeliGratisPreview()">
+        <div class="form-group">
+          <label class="form-label">Jumlah Beli (X)</label>
+          <input type="number" id="promo-buy-qty" class="form-input" value="2" min="1" oninput="_updatePromoBeliGratisPreview()">
+        </div>
+
+        <!-- Free side toggle -->
+        <div class="form-group">
+          <label class="form-label">Item Gratis (Y)</label>
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <button type="button" id="bg-ftype-item" class="filter-btn on" onclick="_setFreeType('item')">Item Spesifik</button>
+            <button type="button" id="bg-ftype-cat" class="filter-btn" onclick="_setFreeType('cat')">Kategori</button>
           </div>
-          <div class="form-group">
-            <label class="form-label">Item Gratis (Y)</label>
+          <div id="bg-free-item-wrap">
             <select id="promo-free-item" class="form-input" onchange="_updatePromoBeliGratisPreview()"></select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Jumlah Gratis</label>
-            <input type="number" id="promo-free-qty" class="form-input" value="1" min="1" oninput="_updatePromoBeliGratisPreview()">
+          <div id="bg-free-cat-wrap" style="display:none">
+            <select id="promo-free-cat" class="form-input" onchange="_updatePromoBeliGratisPreview()"></select>
           </div>
         </div>
+        <div class="form-group">
+          <label class="form-label">Jumlah Gratis</label>
+          <input type="number" id="promo-free-qty" class="form-input" value="1" min="1" oninput="_updatePromoBeliGratisPreview()">
+        </div>
         <div id="promo-bg-preview" style="font-size:12px;color:var(--p);font-weight:600;background:var(--pl);border-radius:8px;padding:8px 12px;margin-bottom:4px"></div>
+        <div style="font-size:11px;color:var(--t2);margin-bottom:8px;line-height:1.4">
+          Jika pilih kategori: pelanggan dapat gratis item termurah dari kategori tersebut yang ada di keranjang.
+        </div>
       </div>
 
       <!-- Hari berlaku -->

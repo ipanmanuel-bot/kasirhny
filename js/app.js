@@ -867,6 +867,7 @@ function openAddPromo() {
   g('promo-buy-qty').value = '2';
   g('promo-free-qty').value = '1';
   _bgBuyType = 'item';
+  _bgFreeType = 'item';
   document.querySelectorAll('.promo-day-cb').forEach(cb => cb.checked = false);
   g('m-promo-title').textContent = 'Tambah Promo';
   _buildPromoCatOptions();
@@ -894,15 +895,21 @@ function openEditPromo(id) {
   onPromoDiscTypeChange();
   if (p.discType === 'beli_gratis') {
     _bgBuyType = p.buyType || 'item';
+    _bgFreeType = p.freeType || 'item';
     _rebuildPromoItemSelects();
     setTimeout(() => {
       _setBuyType(_bgBuyType);
+      _setFreeType(_bgFreeType);
       if (_bgBuyType === 'cat') {
         if (p.buyCatId && g('promo-buy-cat')) g('promo-buy-cat').value = p.buyCatId;
       } else {
         if (p.buyItemId && g('promo-buy-item')) g('promo-buy-item').value = p.buyItemId;
       }
-      if (p.freeItemId && g('promo-free-item')) g('promo-free-item').value = p.freeItemId;
+      if (_bgFreeType === 'cat') {
+        if (p.freeCatId && g('promo-free-cat')) g('promo-free-cat').value = p.freeCatId;
+      } else {
+        if (p.freeItemId && g('promo-free-item')) g('promo-free-item').value = p.freeItemId;
+      }
       _updatePromoBeliGratisPreview();
     }, 0);
   }
@@ -929,7 +936,8 @@ function onPromoDiscTypeChange() {
   if (isBG) _rebuildPromoItemSelects();
 }
 
-let _bgBuyType = 'item'; // 'item' | 'cat'
+let _bgBuyType = 'item';  // 'item' | 'cat'
+let _bgFreeType = 'item'; // 'item' | 'cat'
 
 function _setBuyType(type) {
   _bgBuyType = type;
@@ -941,21 +949,30 @@ function _setBuyType(type) {
   _updatePromoBeliGratisPreview();
 }
 
+function _setFreeType(type) {
+  _bgFreeType = type;
+  g('bg-ftype-item')?.classList.toggle('on', type === 'item');
+  g('bg-ftype-cat')?.classList.toggle('on', type === 'cat');
+  const iw = g('bg-free-item-wrap'), cw = g('bg-free-cat-wrap');
+  if (iw) iw.style.display = type === 'item' ? '' : 'none';
+  if (cw) cw.style.display = type === 'cat' ? '' : 'none';
+  _updatePromoBeliGratisPreview();
+}
+
 function _rebuildPromoItemSelects() {
   const itemOpts = menuItems.filter(m => m.active !== false)
     .map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`)
     .join('');
   ['promo-buy-item','promo-free-item'].forEach(id => { const el = g(id); if (el) el.innerHTML = itemOpts; });
   const catOpts = menuCats.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
-  const catSel = g('promo-buy-cat'); if (catSel) catSel.innerHTML = catOpts;
+  ['promo-buy-cat','promo-free-cat'].forEach(id => { const el = g(id); if (el) el.innerHTML = catOpts; });
   _updatePromoBeliGratisPreview();
 }
 
 function _updatePromoBeliGratisPreview() {
-  const fi = menuItems.find(m => m.id === g('promo-free-item')?.value);
   const bq = parseInt(g('promo-buy-qty')?.value) || 1;
   const fq = parseInt(g('promo-free-qty')?.value) || 1;
-  let buyLabel = '';
+  let buyLabel = '', freeLabel = '';
   if (_bgBuyType === 'cat') {
     const cat = menuCats.find(c => c.id === g('promo-buy-cat')?.value);
     buyLabel = cat ? `${bq}x item ${cat.name}` : '';
@@ -963,8 +980,15 @@ function _updatePromoBeliGratisPreview() {
     const bi = menuItems.find(m => m.id === g('promo-buy-item')?.value);
     buyLabel = bi ? `${bq}x ${bi.name}` : '';
   }
+  if (_bgFreeType === 'cat') {
+    const cat = menuCats.find(c => c.id === g('promo-free-cat')?.value);
+    freeLabel = cat ? `${fq}x item ${cat.name}` : '';
+  } else {
+    const fi = menuItems.find(m => m.id === g('promo-free-item')?.value);
+    freeLabel = fi ? `${fq}x ${fi.name}` : '';
+  }
   const prev = g('promo-bg-preview');
-  if (prev) prev.textContent = buyLabel && fi ? `Beli ${buyLabel} → Gratis ${fq}x ${fi.name}` : '';
+  if (prev) prev.textContent = buyLabel && freeLabel ? `Beli ${buyLabel} → Gratis ${freeLabel}` : '';
 }
 
 function savePromo() {
@@ -981,17 +1005,30 @@ function savePromo() {
   if (discType === 'beli_gratis') {
     const buyQty = parseInt(g('promo-buy-qty')?.value) || 1;
     const freeQty = parseInt(g('promo-free-qty')?.value) || 1;
-    const freeItemId = g('promo-free-item')?.value;
-    if (!freeItemId) { toast('Pilih item gratis', 'err'); return; }
+    const base = { name, discType, buyQty, freeQty, catId:'all', discVal:0, days, from, to, note };
+
+    // Buy side
     if (_bgBuyType === 'cat') {
       const buyCatId = g('promo-buy-cat')?.value;
       if (!buyCatId) { toast('Pilih kategori pembelian', 'err'); return; }
-      promoData = { name, discType, buyType:'cat', buyCatId, buyQty, freeItemId, freeQty, catId:'all', discVal:0, days, from, to, note };
+      base.buyType = 'cat'; base.buyCatId = buyCatId;
     } else {
       const buyItemId = g('promo-buy-item')?.value;
       if (!buyItemId) { toast('Pilih item yang dibeli', 'err'); return; }
-      promoData = { name, discType, buyType:'item', buyItemId, buyQty, freeItemId, freeQty, catId:'all', discVal:0, days, from, to, note };
+      base.buyType = 'item'; base.buyItemId = buyItemId;
     }
+
+    // Free side
+    if (_bgFreeType === 'cat') {
+      const freeCatId = g('promo-free-cat')?.value;
+      if (!freeCatId) { toast('Pilih kategori gratis', 'err'); return; }
+      base.freeType = 'cat'; base.freeCatId = freeCatId;
+    } else {
+      const freeItemId = g('promo-free-item')?.value;
+      if (!freeItemId) { toast('Pilih item gratis', 'err'); return; }
+      base.freeType = 'item'; base.freeItemId = freeItemId;
+    }
+    promoData = base;
   } else {
     const catId = g('promo-cat').value;
     const discVal = parseFloat(g('promo-disc-val').value) || 0;
@@ -1053,44 +1090,53 @@ function calcPromoDisc(p, subtotal) {
 }
 
 function calcBeliGratisDisc(promo, cart) {
-  const freeItem = cart.find(c => c.id === promo.freeItemId);
-  if (!freeItem) return 0;
+  const getMatchIds = (type, itemId, catId) => {
+    if (type === 'cat') return menuItems.filter(m => m.catId === catId).map(m => m.id);
+    return itemId ? [itemId] : [];
+  };
+  const buyIds  = getMatchIds(promo.buyType,  promo.buyItemId,  promo.buyCatId);
+  const freeIds = getMatchIds(promo.freeType || 'item', promo.freeItemId, promo.freeCatId);
+  if (!buyIds.length || !freeIds.length) return 0;
 
-  let totalBuyQty = 0;
-  if (promo.buyType === 'cat') {
-    // Hitung total qty semua item dalam kategori tertentu di cart
-    const catItems = menuItems.filter(m => m.catId === promo.buyCatId).map(m => m.id);
-    totalBuyQty = cart.filter(c => catItems.includes(c.id)).reduce((s, c) => s + c.qty, 0);
-  } else {
-    // Item spesifik
-    if (promo.freeItemId === promo.buyItemId) {
-      // Item sama: hitung per set (buyQty + freeQty)
-      const buyItem = cart.find(c => c.id === promo.buyItemId);
-      if (!buyItem) return 0;
-      const sets = Math.floor(buyItem.qty / (promo.buyQty + promo.freeQty));
-      return sets * promo.freeQty * buyItem.price;
-    }
-    const buyItem = cart.find(c => c.id === promo.buyItemId);
-    totalBuyQty = buyItem?.qty || 0;
-  }
+  const buyItems  = cart.filter(c => buyIds.includes(c.id));
+  const freeItems = cart.filter(c => freeIds.includes(c.id));
 
+  const totalBuyQty = buyItems.reduce((s, c) => s + c.qty, 0);
   if (totalBuyQty < promo.buyQty) return 0;
-  const sets = Math.floor(totalBuyQty / promo.buyQty);
-  const freeCount = Math.min(sets * promo.freeQty, freeItem.qty);
-  return freeCount * freeItem.price;
+
+  // Cek overlap: apakah buy dan free dari pool item yang sama?
+  const overlap = buyIds.some(id => freeIds.includes(id));
+
+  let sets;
+  if (overlap) {
+    // Pool sama → 1 set = (buyQty + freeQty) unit
+    sets = Math.floor(totalBuyQty / (promo.buyQty + promo.freeQty));
+  } else {
+    // Pool beda → sets berdasarkan buy saja
+    sets = Math.floor(totalBuyQty / promo.buyQty);
+  }
+  const maxFree = sets * promo.freeQty;
+  if (maxFree <= 0) return 0;
+
+  // Kumpulkan unit item free, urut termurah dulu (customer dapat yang termurah gratis)
+  const freeUnits = [];
+  freeItems.forEach(c => { for (let i = 0; i < c.qty; i++) freeUnits.push(c.price); });
+  freeUnits.sort((a, b) => a - b);
+
+  const actualFree = Math.min(maxFree, freeUnits.length);
+  let disc = 0;
+  for (let i = 0; i < actualFree; i++) disc += freeUnits[i];
+  return disc;
 }
 
 function _promoBeliGratisLabel(p) {
-  const fi = menuItems.find(m => m.id === p.freeItemId);
-  let buyLabel;
-  if (p.buyType === 'cat') {
-    const cat = menuCats.find(c => c.id === p.buyCatId);
-    buyLabel = `${p.buyQty}x item ${cat?.name || 'Kategori'}`;
-  } else {
-    const bi = menuItems.find(m => m.id === p.buyItemId);
-    buyLabel = `${p.buyQty}x ${bi?.name || '?'}`;
-  }
-  return `Beli ${buyLabel} → Gratis ${p.freeQty}x ${fi?.name || '?'}`;
+  const buyLabel = p.buyType === 'cat'
+    ? `${p.buyQty}x item ${menuCats.find(c => c.id === p.buyCatId)?.name || 'Kategori'}`
+    : `${p.buyQty}x ${menuItems.find(m => m.id === p.buyItemId)?.name || '?'}`;
+  const freeLabel = (p.freeType || 'item') === 'cat'
+    ? `${p.freeQty}x item ${menuCats.find(c => c.id === p.freeCatId)?.name || 'Kategori'}`
+    : `${p.freeQty}x ${menuItems.find(m => m.id === p.freeItemId)?.name || '?'}`;
+  return `Beli ${buyLabel} → Gratis ${freeLabel}`;
 }
 
 // ─── Menu Management ─────────────────────────────────────────────────────────
