@@ -40,6 +40,19 @@ function clearStoreCode() {
   currentUserId = null;
 }
 
+async function checkStoreCode(code) {
+  if (!supaEnabled || !sbClient) return { valid: false, error: 'Koneksi Supabase belum siap. Coba refresh.' };
+  try {
+    const tout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
+    const req = sbClient.from('store_codes').select('code').eq('code', code).maybeSingle();
+    const { data, error } = await Promise.race([req, tout]);
+    if (error) return { valid: false, error: error.message };
+    return { valid: !!data };
+  } catch (e) {
+    return { valid: false, error: e.message === 'timeout' ? 'Koneksi timeout' : e.message };
+  }
+}
+
 // ─── Supabase helpers ────────────────────────────────────────────────────────
 
 async function sbUpsert(table, data) {

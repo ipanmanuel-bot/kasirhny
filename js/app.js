@@ -185,10 +185,19 @@ function _setCodeErr(msg) {
   el.textContent = msg; el.style.display = msg ? '' : 'none';
 }
 
-function doEnterCode() {
+async function doEnterCode() {
   const code = (g('inp-code')?.value || '').trim().toUpperCase();
   if (!code || code.length < 4) { _setCodeErr('Kode minimal 4 karakter'); return; }
+  const btn = document.querySelector('#scr-code button.scr-btn');
+  const origLabel = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Memverifikasi...'; }
   _setCodeErr('');
+  const res = await checkStoreCode(code);
+  if (btn) { btn.disabled = false; btn.textContent = origLabel || 'Masuk'; }
+  if (!res.valid) {
+    _setCodeErr(res.error || 'Kode toko tidak valid. Hubungi admin untuk mendapatkan kode.');
+    return;
+  }
   saveStoreCode(code);
   loadLocalSettings();
   supaLoadAll().catch(() => {});
