@@ -329,7 +329,7 @@ function _applyRoleAccess() {
   document.body.classList.toggle('is-staff', isStaff);
   // Nav item yang boleh diakses karyawan (hanya POS)
   const staffAllowed = ['pos'];
-  document.querySelectorAll('#sbnav .ni, #bnav .bnav-item').forEach(el => {
+  document.querySelectorAll('#sbnav .ni').forEach(el => {
     const page = el.getAttribute('data-page');
     if (!page) return;
     el.style.display = (isStaff && !staffAllowed.includes(page)) ? 'none' : '';
@@ -363,9 +363,6 @@ function goPage(page, btn) {
   // Sync sidebar nav
   document.querySelectorAll('.ni').forEach(n => n.classList.remove('on'));
   document.querySelectorAll(`.ni[data-page="${page}"]`).forEach(n => n.classList.add('on'));
-  // Sync bottom nav
-  document.querySelectorAll('.bnav-item').forEach(n => n.classList.remove('on'));
-  document.querySelectorAll(`.bnav-item[data-page="${page}"]`).forEach(n => n.classList.add('on'));
   // Close sidebar on mobile after navigation
   closeSidebar();
   const renders = {
@@ -418,25 +415,9 @@ function refreshDash() {
 
   // Top items
   const top = _topItems(ords);
-  // Inline badge (cell di grid)
+  // Inline badge (cell di grid stat "Menu Terlaris")
   const inlineEl = g('d-top-item-inline');
   if (inlineEl) inlineEl.textContent = top.length ? top[0].name + ' (' + top[0].qty + 'x)' : '—';
-  // List lengkap
-  const topEl = g('d-top-items');
-  if (topEl) {
-    if (!top.length) {
-      topEl.innerHTML = '<p style="color:var(--t3);font-size:13px;text-align:center;padding:8px 0">Belum ada data</p>';
-    } else {
-      topEl.innerHTML = top.map((item, i) =>
-        `<div class="top-item-row">
-          <span class="top-rank">${i + 1}</span>
-          <span class="top-name">${esc(item.name)}</span>
-          <span class="top-qty">${item.qty}x</span>
-          <span class="top-rev">${fmt(item.rev)}</span>
-        </div>`
-      ).join('');
-    }
-  }
 
   // Chart
   _renderDashChart(ords);

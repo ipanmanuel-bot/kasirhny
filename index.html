@@ -169,20 +169,6 @@
     .page { display: none; }
 
     /* Bottom nav mobile */
-    #bnav {
-      display: none; position: fixed; bottom: 0; left: 0; right: 0;
-      background: var(--dk); border-top: 1px solid var(--dk3);
-      z-index: 195; height: 60px;
-      align-items: center; justify-content: space-around;
-    }
-    .bnav-item {
-      display: flex; flex-direction: column; align-items: center; gap: 2px;
-      padding: 6px 12px; color: rgba(255,255,255,.5); cursor: pointer;
-      font-size: 10px; font-weight: 500; transition: .15s; border-radius: 8px;
-    }
-    .bnav-item i { width: 20px; height: 20px; }
-    .bnav-item.on { color: var(--p); }
-    .bnav-item:hover { color: #fff; }
 
     /* ── Page Header ────────────────────────────────────────────── */
     .ph { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
@@ -396,7 +382,7 @@
     #p-pos { padding: 0 !important; }
     .pos-split {
       display: grid; grid-template-columns: 1fr 340px;
-      height: calc(100vh - 0px); overflow: hidden;
+      height: calc(100vh - 40px); overflow: hidden;
     }
     .pos-menu-panel { overflow-y: auto; padding: 16px; background: var(--bg); }
     .pos-cart-panel {
@@ -580,20 +566,7 @@
       #sbnav { transform: translateX(-100%); }
       #sbnav.mob-open { transform: translateX(0); }
       #mob-topbar { display: flex; }
-      #bnav { display: flex; }
-      #mc { margin-left: 0; padding: 64px 12px 72px; }
-
-      /* Staff mode: sembunyikan bottom nav & padding bottom */
-      body.is-staff #bnav { display: none; }
-      body.is-staff #mc { padding-bottom: 12px; }
-
-      /* Saat sidebar terbuka, sembunyikan bnav agar tombol logout tidak tertutup */
-      body:has(#sbnav.mob-open) #bnav { display: none; }
-
-      /* Bottom nav — bisa scroll horizontal jika perlu */
-      #bnav { overflow-x: auto; }
-      .bnav-item { padding: 6px 10px; min-width: 52px; font-size: 9px; }
-      .bnav-item i { width: 18px; height: 18px; }
+      #mc { margin-left: 0; padding: 64px 12px 12px; }
 
       /* Dashboard */
       .dash-stats { grid-template-columns: 1fr 1fr; }
@@ -856,11 +829,6 @@
           <div style="font-weight:700;font-size:14px;margin-bottom:14px">Penjualan 7 Hari Terakhir</div>
           <div id="dash-chart-wrap"><canvas id="dash-chart"></canvas></div>
         </div>
-        <!-- Menu Terlaris lengkap -->
-        <div style="padding:14px 16px;border-top:1px solid var(--b1)">
-          <div style="font-weight:700;font-size:13px;margin-bottom:10px;color:var(--t2);text-transform:uppercase;letter-spacing:.04em">Menu Terlaris</div>
-          <div id="d-top-items"><p style="color:var(--t3);font-size:13px;text-align:center;padding:8px 0">Belum ada data</p></div>
-        </div>
       </div>
     </div>
 
@@ -1113,37 +1081,6 @@
 
   </main>
 
-  <!-- Bottom nav (mobile) -->
-  <nav id="bnav">
-    <div class="bnav-item on" data-page="dashboard" onclick="goPage('dashboard',this)">
-      <i data-lucide="layout-dashboard"></i>
-      <span>Beranda</span>
-    </div>
-    <div class="bnav-item" data-page="pos" onclick="goPage('pos',this)">
-      <i data-lucide="shopping-cart"></i>
-      <span>Kasir</span>
-    </div>
-    <div class="bnav-item" data-page="orders" onclick="goPage('orders',this)">
-      <i data-lucide="clipboard-list"></i>
-      <span>Pesanan</span>
-    </div>
-    <div class="bnav-item" data-page="kas" onclick="goPage('kas',this)">
-      <i data-lucide="wallet"></i>
-      <span>Kas</span>
-    </div>
-    <div class="bnav-item" data-page="menu" onclick="goPage('menu',this)">
-      <i data-lucide="utensils"></i>
-      <span>Menu</span>
-    </div>
-    <div class="bnav-item" data-page="promo" onclick="goPage('promo',this)">
-      <i data-lucide="tag"></i>
-      <span>Promo</span>
-    </div>
-    <div class="bnav-item" data-page="settings" onclick="goPage('settings',this)">
-      <i data-lucide="settings"></i>
-      <span>Setting</span>
-    </div>
-  </nav>
 
 </div>
 
@@ -1467,14 +1404,6 @@
 
     // Init Supabase
     initSync();
-
-    // Wire up bottom nav: also update sidebar .ni active state
-    document.querySelectorAll('.bnav-item').forEach(item => {
-      item.addEventListener('click', function() {
-        document.querySelectorAll('.bnav-item').forEach(b => b.classList.remove('on'));
-        this.classList.add('on');
-      });
-    });
 
     // Show POS page add-button change when tab changes
     const menuTabHandler = () => {
