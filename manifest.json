@@ -1,0 +1,39 @@
+{
+  "name": "KasirHnY — Kasir Resto & Cafe",
+  "short_name": "KasirHnY",
+  "description": "Aplikasi kasir POS untuk restoran & cafe dengan cetak struk thermal (Bluetooth ESC/POS).",
+  "start_url": "./",
+  "scope": "./",
+  "id": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#2563EB",
+  "background_color": "#ffffff",
+  "lang": "id-ID",
+  "dir": "ltr",
+  "categories": ["business", "productivity", "food"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Kasir (POS)",
+      "short_name": "POS",
+      "description": "Buka layar kasir untuk transaksi",
+      "url": "./?page=pos"
+    },
+    {
+      "name": "Pesanan",
+      "short_name": "Pesanan",
+      "description": "Lihat daftar pesanan",
+      "url": "./?page=orders"
+    }
+  ]
+}

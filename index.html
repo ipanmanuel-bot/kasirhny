@@ -2,8 +2,20 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
   <title>KasirHnY</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2563EB">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="KasirHnY">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="KasirHnY">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -836,10 +848,15 @@
     <div class="page" id="p-pos">
       <div class="pos-mobile-header">
         <span class="pos-mobile-title">Kasir</span>
-        <button class="pos-cart-toggle" onclick="toggleMobileCart()">
-          Keranjang
-          <span id="cart-mobile-badge"></span>
-        </button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="icon-btn" onclick="openPrinterModal()" title="Pengaturan Printer">
+            <i data-lucide="printer"></i>
+          </button>
+          <button class="pos-cart-toggle" onclick="toggleMobileCart()">
+            Keranjang
+            <span id="cart-mobile-badge"></span>
+          </button>
+        </div>
       </div>
       <div class="pos-split">
         <!-- Menu Panel -->
@@ -847,6 +864,10 @@
           <div style="padding:12px 0 0">
             <div class="pos-search-row">
               <input type="search" class="pos-search" placeholder="Cari menu..." oninput="onPOSSearch(this.value)">
+              <button class="btn btn-sec btn-sm" onclick="openPrinterModal()" title="Pengaturan Printer" style="white-space:nowrap;display:inline-flex;align-items:center;gap:6px">
+                <i data-lucide="printer" style="width:16px;height:16px"></i>
+                <span>Printer</span>
+              </button>
             </div>
             <div id="pos-cat-filter"></div>
             <div class="menu-grid" id="pos-menu-grid"></div>
@@ -1025,7 +1046,7 @@
             <input type="text" id="set-store-name" class="form-input" placeholder="Nama toko">
           </div>
           <div class="form-group">
-            <label class="form-label">Nomor WhatsApp</label>
+            <label class="form-label">Nomor WhatsApp / Telp</label>
             <input type="text" id="set-store-wa" class="form-input" placeholder="08xxx">
           </div>
         </div>
@@ -1034,6 +1055,50 @@
           <input type="text" id="set-store-addr" class="form-input" placeholder="Alamat toko">
         </div>
         <button class="btn btn-p btn-sm" onclick="saveStoreInfo()">Simpan Informasi</button>
+      </div>
+
+      <!-- Struk / Printer -->
+      <div class="settings-section">
+        <div class="settings-section-title">Struk &amp; Printer</div>
+
+        <div class="form-group">
+          <label class="form-label">Logo Struk</label>
+          <div id="logo-preview" style="display:flex;align-items:center;gap:8px;margin-bottom:8px"></div>
+          <input type="file" id="set-logo-file" accept="image/*" class="form-input"
+                 style="padding:6px;font-size:12px" onchange="onLogoFilePicked(this)">
+          <div style="font-size:11px;color:var(--t2);margin-top:4px">
+            Format apapun (PNG/JPG). Otomatis dikonversi ke hitam-putih untuk printer thermal.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Ukuran Kertas Printer</label>
+          <div style="display:flex;gap:16px;padding:4px 0">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="radio" name="printer-width" value="55"> 55 mm
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="radio" name="printer-width" value="80"> 80 mm
+            </label>
+          </div>
+          <div style="font-size:11px;color:var(--t2)">
+            Layout struk menyesuaikan lebar agar teks tidak terpotong.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Teks Footer Struk</label>
+          <input type="text" id="set-store-footer" class="form-input"
+                 placeholder="Terima kasih telah berkunjung!">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Link Kritik &amp; Saran (opsional)</label>
+          <input type="text" id="set-receipt-link" class="form-input"
+                 placeholder="https://...">
+        </div>
+
+        <button class="btn btn-p btn-sm" onclick="saveStoreInfo()">Simpan Pengaturan Struk</button>
       </div>
 
       <!-- Change Password -->
@@ -1380,6 +1445,67 @@
   </div>
 </div>
 
+<!-- Printer Settings Modal -->
+<div class="mbg" id="m-printer" style="display:none" onclick="if(event.target===this)closeModal('m-printer')">
+  <div class="mbox">
+    <div class="mhead">
+      <span class="mhead-title">Pengaturan Printer</span>
+      <button class="mclose" onclick="closeModal('m-printer')">&#x2715;</button>
+    </div>
+    <div class="mbody">
+      <div class="form-group">
+        <label class="form-label">Status Koneksi</label>
+        <div id="printer-status" style="padding:10px 12px;border:1px solid var(--b2);border-radius:6px;font-size:13px;background:var(--bg)">
+          Memuat...
+        </div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <button class="btn btn-p btn-sm" onclick="btConnectPrinter()">
+          <i data-lucide="bluetooth" style="width:15px;height:15px"></i> Sambungkan / Ganti
+        </button>
+        <button class="btn btn-sec btn-sm" onclick="btForgetPrinter()">
+          <i data-lucide="x" style="width:15px;height:15px"></i> Lupakan Printer
+        </button>
+        <button class="btn btn-sec btn-sm" onclick="btTestPrint()">
+          <i data-lucide="printer" style="width:15px;height:15px"></i> Test Cetak
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Ukuran Kertas Printer</label>
+        <div style="display:flex;gap:16px;padding:4px 0">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="printer-width-pos" value="55" onchange="savePrinterWidthQuick(this.value)"> 55 mm
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="printer-width-pos" value="80" onchange="savePrinterWidthQuick(this.value)"> 80 mm
+          </label>
+        </div>
+        <div style="font-size:11px;color:var(--t2)">
+          Layout struk akan otomatis menyesuaikan.
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--t2);margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;line-height:1.5">
+        <b>Tips Android:</b><br>
+        &bull; Pair printer dulu di <b>Setelan Bluetooth Android</b>, baru sambungkan di sini.<br>
+        &bull; Setelah pertama kali sambung, printer akan otomatis reconnect &mdash; tidak perlu memilih ulang setiap cetak.<br>
+        &bull; Install sebagai aplikasi (PWA) untuk pengalaman terbaik: buka lebih cepat, bisa offline, ikon di home screen.<br>
+        &bull; Bluetooth Web hanya jalan di <b>Chrome Android</b> / Edge (bukan Firefox / iOS Safari).
+      </div>
+
+      <button id="btn-install-pwa" class="btn btn-p btn-sm" style="display:none;margin-top:10px;width:100%"
+              onclick="promptInstallPWA()">
+        <i data-lucide="download" style="width:15px;height:15px"></i> Install Aplikasi KasirHnY
+      </button>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-sec" onclick="closeModal('m-printer')">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast Container -->
 <div id="toast-wrap" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none"></div>
 
@@ -1439,6 +1565,67 @@
       showCodeScreen();
     }
   });
+
+  // ─── PWA: Service Worker + Install Prompt ────────────────────────────
+  window.deferredInstallPrompt = null;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    window.deferredInstallPrompt = e;
+    if (typeof _showInstallCTA === 'function') _showInstallCTA(true);
+  });
+
+  window.addEventListener('appinstalled', () => {
+    window.deferredInstallPrompt = null;
+    if (typeof _showInstallCTA === 'function') _showInstallCTA(false);
+    if (typeof toast === 'function') toast('KasirHnY berhasil diinstall!');
+  });
+
+  function _showInstallCTA(show) {
+    const btn = document.getElementById('btn-install-pwa');
+    if (btn) btn.style.display = show ? '' : 'none';
+  }
+
+  async function promptInstallPWA() {
+    const p = window.deferredInstallPrompt;
+    if (!p) {
+      if (typeof toast === 'function')
+        toast('Install belum tersedia. Buka di Chrome Android → menu → "Install aplikasi".', 'warn');
+      return;
+    }
+    p.prompt();
+    try { await p.userChoice; } catch (e) {}
+    window.deferredInstallPrompt = null;
+    _showInstallCTA(false);
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js', { scope: './' })
+        .then(reg => {
+          // Poll for updates every hour
+          setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+          reg.addEventListener('updatefound', () => {
+            const nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener('statechange', () => {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                // Auto-apply new version on next navigation
+                nw.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+        })
+        .catch(err => console.warn('[sw] register failed', err));
+
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloading) return;
+        reloading = true;
+        window.location.reload();
+      });
+    });
+  }
 </script>
 </body>
 </html>

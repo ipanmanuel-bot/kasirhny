@@ -111,6 +111,10 @@ function buildSettingsRow() {
     store_addr: storeAddr,
     store_wa: storeWa,
     store_footer: storeFooter,
+    store_logo: storeLogo,
+    store_logo_bw: storeLogoBW,
+    printer_width: printerWidth,
+    receipt_link: receiptLink,
     owner_pwd: ownerPwd,
     menu_items: JSON.stringify(menuItems),
     menu_cats: JSON.stringify(menuCats),
@@ -136,6 +140,10 @@ function _applySettings(s) {
   if (s.store_addr !== undefined) storeAddr = s.store_addr;
   if (s.store_wa !== undefined) storeWa = s.store_wa;
   if (s.store_footer !== undefined) storeFooter = s.store_footer;
+  if (s.store_logo !== undefined) storeLogo = s.store_logo || '';
+  if (s.store_logo_bw !== undefined) storeLogoBW = s.store_logo_bw || '';
+  if (s.printer_width !== undefined && s.printer_width) printerWidth = String(s.printer_width);
+  if (s.receipt_link !== undefined) receiptLink = s.receipt_link || '';
   if (s.owner_pwd !== undefined) ownerPwd = s.owner_pwd;
   if (s.menu_items) {
     try { menuItems = JSON.parse(s.menu_items); } catch (e) { menuItems = []; }

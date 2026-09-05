@@ -24,6 +24,8 @@ function renderPOS() {
   renderPOSCatFilter();
   renderPOSMenu();
   renderPOSCart();
+  // Fire-and-forget: keep printer warm so first print is instant
+  if (typeof warmPrinter === 'function') warmPrinter();
 }
 
 function renderPOSCatFilter() {
@@ -267,69 +269,208 @@ function placeOrder() {
 
 // ─── Receipt Modal ────────────────────────────────────────────────────────────
 
+function _receiptTime(o) {
+  if (!o.isoDate) return '';
+  try {
+    const d = new Date(o.isoDate);
+    return String(d.getHours()).padStart(2,'0') + ':' +
+           String(d.getMinutes()).padStart(2,'0') + ':' +
+           String(d.getSeconds()).padStart(2,'0');
+  } catch(e) { return ''; }
+}
+
+function _receiptDateISO(o) {
+  if (o.isoDate) { try { return new Date(o.isoDate).toISOString().slice(0,10); } catch(e) {} }
+  return o.date || '';
+}
+
+function _receiptOutlet(o) {
+  const out = (typeof outlets !== 'undefined' ? outlets : []).find(x => x.id === o.outletId);
+  return out ? out : null;
+}
+
+function _receiptTotalQty(o) {
+  return (o.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+}
+
+function buildReceiptHTML(o) {
+  const items = o.items || [];
+  const totalQty = _receiptTotalQty(o);
+  const dateISO = _receiptDateISO(o);
+  const time = _receiptTime(o);
+  const outlet = _receiptOutlet(o);
+  const payMethod = o.payMethod || 'Tunai';
+  const bayarLabel = 'Bayar (' + payMethod + ')';
+  // All orders are Lunas → bayar = total, kembali = 0
+  const bayarAmt = o.total;
+  const kembali = 0;
+
+  const logoHTML = storeLogoBW
+    ? `<div class="r-logo"><img src="${storeLogoBW}" alt="logo"></div>`
+    : '';
+
+  const rightMeta = [
+    o.handledBy || '',
+    o.custName || '',
+    outlet ? (outlet.addr || outlet.name || '') : ''
+  ].filter(Boolean);
+
+  const metaRows = [];
+  const leftRows = [dateISO, time].filter(Boolean);
+  const maxRows = Math.max(leftRows.length, rightMeta.length);
+  for (let i = 0; i < maxRows; i++) {
+    metaRows.push(
+      `<div class="r-meta-row"><span>${esc(leftRows[i] || '')}</span><span>${esc(rightMeta[i] || '')}</span></div>`
+    );
+  }
+
+  const itemRows = items.map((it, idx) => {
+    const num = idx + 1;
+    // detail line: "1 x price" (or "qty unit x price" if we had unit — we don't, so just qty x price)
+    const detail = `${it.qty} x ${fmtAmt(it.price)}`;
+    return `
+      <div class="r-item">
+        <div class="r-item-name"><span class="r-item-num">${num}.</span> ${esc(it.name)}</div>
+        <div class="r-item-line">
+          <span class="r-item-detail">${esc(detail)}</span>
+          <span class="r-item-total">Rp ${fmtAmt(it.lineTotal)}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="r-wrap">
+      ${logoHTML}
+      <div class="r-store-name">${esc(storeName || '')}</div>
+      ${storeAddr ? `<div class="r-store-line">${esc(storeAddr)}</div>` : ''}
+      ${storeWa ? `<div class="r-store-line">No. Telp ${esc(storeWa)}</div>` : ''}
+      <div class="r-store-line r-store-id">${esc(o.id)}</div>
+
+      <div class="r-hr"></div>
+
+      <div class="r-meta">${metaRows.join('')}</div>
+      ${o.tableNo ? `<div class="r-tableno">Meja: ${esc(o.tableNo)}</div>` : ''}
+      <div class="r-tableno">No.${esc(o.id)}</div>
+
+      <div class="r-hr"></div>
+
+      <div class="r-items">${itemRows}</div>
+
+      <div class="r-hr"></div>
+
+      <div class="r-qty-line">Total QTY : ${totalQty}</div>
+
+      <div class="r-totals">
+        <div class="r-row"><span>Sub Total</span><span>Rp ${fmtAmt(o.subtotal)}</span></div>
+        ${o.promoAmt > 0 ? `<div class="r-row"><span>Diskon Promo</span><span>-Rp ${fmtAmt(o.promoAmt)}</span></div>` : ''}
+        <div class="r-row r-row-total"><span>Total</span><span>Rp ${fmtAmt(o.total)}</span></div>
+        <div class="r-row"><span>${esc(bayarLabel)}</span><span>Rp ${fmtAmt(bayarAmt)}</span></div>
+        <div class="r-row"><span>Kembali</span><span>Rp ${fmtAmt(kembali)}</span></div>
+      </div>
+
+      ${o.notes ? `<div class="r-notes">Catatan: ${esc(o.notes)}</div>` : ''}
+
+      <div class="r-footer">${esc(storeFooter || 'Terima kasih telah berbelanja')}</div>
+
+      ${receiptLink ? `
+        <div class="r-link-label">Link Kritik dan Saran:</div>
+        <div class="r-link-url">${esc(receiptLink)}</div>` : ''}
+    </div>
+  `;
+}
+
+// CSS used for both the on-screen preview and the print window.
+function receiptCSS(paperMM) {
+  const paperW = paperMM === 55 ? '55mm' : '80mm';
+  // usable width inside 2mm padding on each side
+  const bodyW = paperMM === 55 ? '51mm' : '76mm';
+  const baseFs = paperMM === 55 ? '11px' : '12px';
+  const nameFs = paperMM === 55 ? '15px' : '17px';
+  const totalFs = paperMM === 55 ? '13px' : '15px';
+  return `
+    .r-wrap { font-family: 'Courier New', Consolas, monospace; color:#000; width:${bodyW}; margin:0 auto;
+              font-size:${baseFs}; line-height:1.35; }
+    .r-wrap * { box-sizing:border-box; }
+    .r-logo { text-align:center; margin-bottom:4px; }
+    .r-logo img { max-width:60%; max-height:${paperMM === 55 ? '90px' : '120px'}; }
+    .r-store-name { text-align:center; font-size:${nameFs}; font-weight:700; margin:2px 0; word-wrap:break-word; }
+    .r-store-line { text-align:center; word-wrap:break-word; }
+    .r-store-id { font-family: 'Courier New', monospace; margin-top:2px; word-break:break-all; }
+    .r-hr { border-top:1px dashed #000; margin:6px 0; }
+    .r-meta-row { display:flex; justify-content:space-between; gap:8px; }
+    .r-meta-row span:last-child { text-align:right; }
+    .r-tableno { text-align:left; }
+    .r-item { margin-bottom:4px; }
+    .r-item-name { font-weight:700; word-wrap:break-word; }
+    .r-item-num { display:inline-block; }
+    .r-item-line { display:flex; justify-content:space-between; gap:8px; padding-left:1ch; }
+    .r-item-total { white-space:nowrap; }
+    .r-qty-line { margin:4px 0; }
+    .r-totals { margin-top:2px; }
+    .r-row { display:flex; justify-content:space-between; gap:8px; padding:1px 0; }
+    .r-row-total { font-weight:700; font-size:${totalFs}; }
+    .r-notes { margin-top:6px; }
+    .r-footer { text-align:center; margin-top:8px; }
+    .r-link-label { text-align:center; margin-top:6px; }
+    .r-link-url { text-align:center; word-break:break-all; }
+  `;
+}
+
 function openOrderReceipt(o) {
   const el = g('receipt-body');
   if (!el) return;
   el.dataset.orderId = o.id;
-
-  const storeInfo = storeName ? `<div class="receipt-store">${esc(storeName)}</div>` : '';
-  const addrInfo = storeAddr ? `<div class="receipt-addr">${esc(storeAddr)}</div>` : '';
-
-  el.innerHTML = `
-    <div class="receipt-header">
-      ${storeInfo}
-      ${addrInfo}
-      <div class="receipt-id">${esc(o.id)}</div>
-      <div class="receipt-date">${esc(o.date)} ${o.isoDate ? new Date(o.isoDate).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
-      ${o.custName ? `<div class="receipt-cust">Pelanggan: ${esc(o.custName)}</div>` : ''}
-      ${o.tableNo ? `<div class="receipt-cust">Meja: ${esc(o.tableNo)}</div>` : ''}
-      ${o.handledBy ? `<div class="receipt-cust">Kasir: ${esc(o.handledBy)}</div>` : ''}
-    </div>
-    <div class="receipt-divider"></div>
-    <div class="receipt-items">
-      ${(o.items || []).map(it => `
-        <div class="receipt-item">
-          <span class="ri-name">${esc(it.name)}</span>
-          <span class="ri-qty">${it.qty}x</span>
-          <span class="ri-price">${fmt(it.lineTotal)}</span>
-        </div>
-      `).join('')}
-    </div>
-    <div class="receipt-divider"></div>
-    <div class="receipt-totals">
-      <div class="receipt-row"><span>Subtotal</span><span>${fmt(o.subtotal)}</span></div>
-      ${o.promoAmt > 0 ? `<div class="receipt-row" style="color:var(--gr)"><span>Diskon Promo</span><span>-${fmt(o.promoAmt)}</span></div>` : ''}
-      <div class="receipt-row receipt-total-row"><span>Total</span><span>${fmt(o.total)}</span></div>
-      <div class="receipt-row"><span>Pembayaran</span><span>${esc(o.payMethod)}</span></div>
-    </div>
-    ${o.notes ? `<div class="receipt-notes">Catatan: ${esc(o.notes)}</div>` : ''}
-    <div class="receipt-footer">${esc(storeFooter || 'Terima kasih!')}</div>
-  `;
-
+  // Inject scoped preview CSS once
+  if (!document.getElementById('receipt-preview-css')) {
+    const s = document.createElement('style');
+    s.id = 'receipt-preview-css';
+    s.textContent = '#receipt-body { background:#fff; color:#000; padding:8px; }' +
+      receiptCSS(80); // preview uses 80mm width for readability
+    document.head.appendChild(s);
+  }
+  el.innerHTML = buildReceiptHTML(o);
   openModal('m-receipt');
+  // Warm the BT printer while user reviews the receipt
+  if (typeof warmPrinter === 'function') warmPrinter();
 }
 
-// ─── Browser Print (fallback) ─────────────────────────────────────────────────
+// ─── Browser / System Printer ─────────────────────────────────────────────────
 function printReceipt() {
-  const body = g('receipt-body');
-  if (!body) return;
-  const win = window.open('', '_blank', 'width=320,height=600');
-  win.document.write(`<html><head><title>Struk</title><style>
-    body{font-family:monospace;font-size:12px;margin:0;padding:8px;width:280px}
-    .receipt-store{font-size:14px;font-weight:bold;text-align:center}
-    .receipt-addr,.receipt-id,.receipt-date,.receipt-cust{text-align:center;font-size:11px;margin-bottom:2px}
-    .receipt-divider{border-top:1px dashed #000;margin:6px 0}
-    .receipt-item{display:flex;justify-content:space-between;margin-bottom:2px}
-    .ri-name{flex:1}.ri-qty{width:30px;text-align:center}.ri-price{width:80px;text-align:right}
-    .receipt-row{display:flex;justify-content:space-between;margin-bottom:2px}
-    .receipt-total-row{font-weight:bold;font-size:14px;border-top:1px solid #000;padding-top:4px;margin-top:4px}
-    .receipt-footer{text-align:center;margin-top:8px;font-size:11px}
-    .receipt-notes{font-size:11px;margin-top:4px}
-    @media print{body{width:auto}}
-  </style></head><body>${body.innerHTML}</body></html>`);
+  const el = g('receipt-body');
+  if (!el) return;
+  const ordId = el.dataset.orderId;
+  const o = (typeof orders !== 'undefined' ? orders : []).find(x => x.id === ordId);
+  if (!o) { toast('Data pesanan tidak ditemukan', 'err'); return; }
+
+  const paperMM = printerPaperMM();
+  const html = buildReceiptHTML(o);
+  const win = window.open('', '_blank', 'width=360,height=640');
+  if (!win) { toast('Popup diblokir. Izinkan popup untuk mencetak.', 'err'); return; }
+  win.document.write(`<!doctype html><html><head><title>Struk ${esc(o.id)}</title>
+<style>
+  @page { size: ${paperMM}mm auto; margin: 0; }
+  html, body { margin:0; padding:0; background:#fff; }
+  body { padding:2mm; }
+  ${receiptCSS(paperMM)}
+  @media print {
+    body { padding:2mm; }
+    .r-wrap { width:100%; }
+  }
+</style></head><body>${html}</body></html>`);
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); win.close(); }, 400);
+  // Give the browser a beat to load the logo image before printing.
+  const doPrint = () => { try { win.print(); } catch(e){} setTimeout(() => { try { win.close(); } catch(e){} }, 300); };
+  const imgs = win.document.images;
+  if (imgs.length === 0) { setTimeout(doPrint, 200); return; }
+  let loaded = 0;
+  const tryPrint = () => { loaded++; if (loaded >= imgs.length) setTimeout(doPrint, 100); };
+  for (let i = 0; i < imgs.length; i++) {
+    if (imgs[i].complete) tryPrint();
+    else { imgs[i].onload = tryPrint; imgs[i].onerror = tryPrint; }
+  }
+  // Safety fallback
+  setTimeout(doPrint, 1500);
 }
 
 // ─── ESC/POS Bluetooth Print ──────────────────────────────────────────────────
@@ -348,93 +489,432 @@ function concatBuf(...arrs) {
 }
 function fmtAmt(n) { return String(Math.round(Math.abs(Number(n)||0))).replace(/\B(?=(\d{3})+(?!\d))/g,'.'); }
 
-function buildEscReceiptResto(o) {
-  const ESC=0x1B,GS=0x1D,LF=0x0A;
-  const INIT=escCmd(ESC,0x40), C=escCmd(ESC,0x61,0x01), L=escCmd(ESC,0x61,0x00);
-  const BON=escCmd(ESC,0x45,0x01), BOFF=escCmd(ESC,0x45,0x00);
-  const FLARGE=escCmd(GS,0x21,0x11), FNORM=escCmd(GS,0x21,0x00);
-  const CUT=escCmd(GS,0x56,0x42,0x00), NL=escCmd(LF);
-  const W = 32;
-  const dash = escText('-'.repeat(W)+'\n');
-  const pad = (l,r) => { const ls=String(l||''),rs=String(r||''); const g=W-ls.length-rs.length; return g>0?ls+' '.repeat(g)+rs+'\n':ls+'\n'+' '.repeat(Math.max(0,W-rs.length))+rs+'\n'; };
+// Split a long text into wrapped lines by max column count.
+function _wrapCols(text, cols) {
+  const words = String(text || '').split(/\s+/);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    if (!w) continue;
+    if (w.length > cols) {
+      if (cur) { lines.push(cur); cur = ''; }
+      for (let i = 0; i < w.length; i += cols) lines.push(w.slice(i, i + cols));
+      continue;
+    }
+    if (!cur) cur = w;
+    else if (cur.length + 1 + w.length <= cols) cur += ' ' + w;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [''];
+}
 
-  const parts = [INIT, C, FLARGE, BON];
-  (storeName||'KasirHnY').split('\n').forEach(line => parts.push(escText(line+'\n')));
-  parts.push(BOFF, FNORM);
-  if (storeAddr) parts.push(escText(storeAddr+'\n'));
-  if (storeWa) parts.push(escText(storeWa+'\n'));
-  parts.push(NL, L, dash);
-  parts.push(escText(pad('No:', o.id)));
-  if (o.tableNo) parts.push(escText(pad('Meja:', o.tableNo)));
-  if (o.custName) parts.push(escText(pad('Pelanggan:', o.custName)));
-  parts.push(escText(pad('Kasir:', o.handledBy||'-')));
-  parts.push(escText(pad('Tgl:', (o.date||''))));
+// Center each of an array of lines in the given column width.
+function _centerLines(lines, cols) {
+  return lines.map(l => {
+    const s = String(l);
+    if (s.length >= cols) return s;
+    const pad = Math.floor((cols - s.length) / 2);
+    return ' '.repeat(pad) + s;
+  });
+}
+
+// Build ESC/POS GS v 0 raster bitmap command from a data URL image.
+// Returns Uint8Array or null on failure.
+async function _escLogoRaster(dataUrl, printerDots) {
+  return new Promise(resolve => {
+    if (!dataUrl) { resolve(null); return; }
+    const img = new Image();
+    img.onload = () => {
+      // Fit logo to ~60% of printer width, aligned to 8 dots
+      const targetW = Math.floor((printerDots * 0.6) / 8) * 8;
+      const scale = targetW / img.width;
+      const w = targetW;
+      const h = Math.max(8, Math.round(img.height * scale));
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      const cx = cv.getContext('2d');
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h);
+      cx.drawImage(img, 0, 0, w, h);
+      const px = cx.getImageData(0, 0, w, h).data;
+      const bytesPerRow = w / 8;
+      const buf = new Uint8Array(bytesPerRow * h);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          const alpha = px[i + 3];
+          const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+          if (alpha > 100 && lum < 150) {
+            buf[y * bytesPerRow + (x >> 3)] |= (0x80 >> (x & 7));
+          }
+        }
+      }
+      const xL = bytesPerRow & 0xff, xH = (bytesPerRow >> 8) & 0xff;
+      const yL = h & 0xff, yH = (h >> 8) & 0xff;
+      // ESC a 1 → center, then GS v 0 m xL xH yL yH data
+      const header = new Uint8Array([0x1B, 0x61, 0x01, 0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
+      const out = new Uint8Array(header.length + buf.length + 1);
+      out.set(header, 0);
+      out.set(buf, header.length);
+      out[out.length - 1] = 0x0A; // LF after image
+      resolve(out);
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+async function buildEscReceiptResto(o) {
+  const ESC = 0x1B, GS = 0x1D, LF = 0x0A;
+  const INIT = escCmd(ESC, 0x40);
+  const AL_C = escCmd(ESC, 0x61, 0x01);
+  const AL_L = escCmd(ESC, 0x61, 0x00);
+  const BON = escCmd(ESC, 0x45, 0x01), BOFF = escCmd(ESC, 0x45, 0x00);
+  const FLARGE = escCmd(GS, 0x21, 0x11), FNORM = escCmd(GS, 0x21, 0x00);
+  const CUT = escCmd(GS, 0x56, 0x42, 0x00), NL = escCmd(LF);
+
+  const cols = (typeof printerCols === 'function') ? printerCols() : 32;
+  const printerDots = cols === 48 ? 576 : 384;
+  const dash = escText('-'.repeat(cols) + '\n');
+
+  const padLR = (l, r) => {
+    const ls = String(l || ''), rs = String(r || '');
+    const gap = cols - ls.length - rs.length;
+    if (gap > 0) return ls + ' '.repeat(gap) + rs + '\n';
+    return ls + '\n' + ' '.repeat(Math.max(0, cols - rs.length)) + rs + '\n';
+  };
+  const centerText = (s) => _centerLines(_wrapCols(s, cols), cols).join('\n') + '\n';
+
+  const parts = [INIT];
+
+  // Logo (raster) — optional
+  if (storeLogoBW) {
+    const raster = await _escLogoRaster(storeLogoBW, printerDots);
+    if (raster) parts.push(raster);
+  }
+
+  // Header (centered)
+  parts.push(AL_C);
+  if (storeName) {
+    parts.push(FLARGE, BON, escText(centerText(storeName)), BOFF, FNORM);
+  }
+  if (storeAddr) parts.push(escText(centerText(storeAddr)));
+  if (storeWa) parts.push(escText(centerText('No. Telp ' + storeWa)));
+  parts.push(escText(centerText(o.id)));
+
+  // Divider + meta
+  parts.push(AL_L, dash);
+  const dateISO = _receiptDateISO(o);
+  const time = _receiptTime(o);
+  const rightRows = [
+    o.handledBy || '',
+    o.custName || '',
+    (() => { const out = _receiptOutlet(o); return out ? (out.addr || out.name || '') : ''; })()
+  ].filter(Boolean);
+  const leftRows = [dateISO, time].filter(Boolean);
+  const rowCount = Math.max(leftRows.length, rightRows.length);
+  for (let i = 0; i < rowCount; i++) {
+    parts.push(escText(padLR(leftRows[i] || '', rightRows[i] || '')));
+  }
+  if (o.tableNo) parts.push(escText('Meja: ' + o.tableNo + '\n'));
+  parts.push(escText('No.' + o.id + '\n'));
+
+  // Divider + items
   parts.push(dash);
-
-  (o.items||[]).forEach(it => {
-    const tot = 'Rp '+fmtAmt(it.lineTotal);
-    const det = '  '+it.qty+'x Rp '+fmtAmt(it.price);
-    parts.push(escText(String(it.name)+'\n'));
-    const g2 = W-det.length-tot.length;
-    parts.push(escText(g2>0 ? det+' '.repeat(g2)+tot+'\n' : det+'\n'+' '.repeat(Math.max(0,W-tot.length))+tot+'\n'));
+  (o.items || []).forEach((it, idx) => {
+    const numPrefix = (idx + 1) + '. ';
+    const nameLines = _wrapCols(numPrefix + String(it.name), cols);
+    // Bold first line (item name)
+    parts.push(BON);
+    nameLines.forEach(l => parts.push(escText(l + '\n')));
+    parts.push(BOFF);
+    // Detail line: "  qty x price" right-aligned "Rp lineTotal"
+    const detail = '  ' + it.qty + ' x ' + fmtAmt(it.price);
+    const total = 'Rp ' + fmtAmt(it.lineTotal);
+    parts.push(escText(padLR(detail, total)));
   });
 
   parts.push(dash);
-  if ((o.promoAmt||0)>0) parts.push(escText(pad('Diskon:', '-Rp '+fmtAmt(o.promoAmt))));
-  parts.push(BON, escText(pad('TOTAL:', 'Rp '+fmtAmt(o.total))), BOFF);
-  parts.push(escText(pad('Bayar:', o.payMethod||'')));
-  if (o.notes) parts.push(escText(pad('Ket:', o.notes)));
-  parts.push(dash, C);
-  (storeFooter||'Terima kasih!').split('\n').forEach(line => parts.push(escText(line+'\n')));
+
+  // Total QTY
+  const totalQty = _receiptTotalQty(o);
+  parts.push(escText('Total QTY : ' + totalQty + '\n'));
+  parts.push(escText('\n'));
+
+  // Totals
+  parts.push(escText(padLR('Sub Total', 'Rp ' + fmtAmt(o.subtotal))));
+  if ((o.promoAmt || 0) > 0) parts.push(escText(padLR('Diskon Promo', '-Rp ' + fmtAmt(o.promoAmt))));
+  parts.push(BON, escText(padLR('Total', 'Rp ' + fmtAmt(o.total))), BOFF);
+  parts.push(escText(padLR('Bayar (' + (o.payMethod || 'Tunai') + ')', 'Rp ' + fmtAmt(o.total))));
+  parts.push(escText(padLR('Kembali', 'Rp 0')));
+
+  if (o.notes) parts.push(escText('\nCatatan: ' + o.notes + '\n'));
+
+  // Footer (centered)
+  parts.push(NL, AL_C);
+  parts.push(escText(centerText(storeFooter || 'Terima kasih telah berbelanja')));
+  if (receiptLink) {
+    parts.push(NL);
+    parts.push(escText(centerText('Link Kritik dan Saran:')));
+    parts.push(escText(centerText(receiptLink)));
+  }
+
   parts.push(NL, NL, NL, CUT);
   return concatBuf(...parts);
 }
 
-async function _getBtDevice() {
-  if (_btDev) { try { if (!_btDev.gatt.connected) await _btDev.gatt.connect(); return _btDev; } catch(e) { _btDev=null; } }
-  const savedId = localStorage.getItem(_BT_ID_KEY);
-  if (savedId && navigator.bluetooth?.getDevices) {
-    try { const devs = await navigator.bluetooth.getDevices(); const d = devs.find(x=>x.id===savedId); if(d){await d.gatt.connect();_btDev=d;d.addEventListener('gattserverdisconnected',()=>{_btDev=null;});return d;} } catch(e){}
+// Cached printer characteristic (avoid re-scanning services on every print)
+let _btChar = null;
+
+function _attachDevListeners(dev) {
+  if (!dev._kasirBound) {
+    dev._kasirBound = true;
+    dev.addEventListener('gattserverdisconnected', () => {
+      _btChar = null;
+      // keep _btDev reference so next connect() re-uses it
+      if (typeof _renderPrinterStatus === 'function') _renderPrinterStatus();
+    });
   }
-  const dev = await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:_BT_SVCS});
-  _btDev = dev; localStorage.setItem(_BT_ID_KEY, dev.id); dev.addEventListener('gattserverdisconnected',()=>{_btDev=null;});
+}
+
+// Try to reconnect to a previously-paired printer without showing the chooser.
+// Returns the device on success, null if unavailable (never throws for silent path).
+async function _reconnectBtSilent() {
+  try {
+    if (_btDev && _btDev.gatt) {
+      if (_btDev.gatt.connected) return _btDev;
+      await _btDev.gatt.connect();
+      _attachDevListeners(_btDev);
+      return _btDev;
+    }
+    const savedId = localStorage.getItem(_BT_ID_KEY);
+    if (!savedId || !navigator.bluetooth || !navigator.bluetooth.getDevices) return null;
+    const devs = await navigator.bluetooth.getDevices();
+    const d = devs.find(x => x.id === savedId);
+    if (!d) return null;
+    await d.gatt.connect();
+    _btDev = d;
+    _attachDevListeners(d);
+    return d;
+  } catch (e) {
+    // Silent path — swallow so caller can decide UX
+    return null;
+  }
+}
+
+// Fresh device pick via chooser. MUST be called from a user gesture.
+async function _pairBtInteractive() {
+  const dev = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: _BT_SVCS
+  });
+  await dev.gatt.connect();
+  _btDev = dev;
+  _btChar = null;
+  localStorage.setItem(_BT_ID_KEY, dev.id);
+  _attachDevListeners(dev);
   return dev;
 }
 
+// Try silent reconnect first; if it fails and interactive is true, show chooser.
+async function _getBtDevice(opts) {
+  const interactive = opts && opts.interactive;
+  const dev = await _reconnectBtSilent();
+  if (dev) return dev;
+  if (interactive) return await _pairBtInteractive();
+  return null;
+}
+
+// Resolve the writable printer characteristic. Cached; re-discovers if needed.
+async function _getBtChar(dev) {
+  if (_btChar && dev.gatt && dev.gatt.connected) return _btChar;
+  const server = dev.gatt.connected ? dev.gatt : await dev.gatt.connect();
+  for (const svcId of _BT_SVCS) {
+    try {
+      const svc = await server.getPrimaryService(svcId);
+      for (const cId of _BT_CHARS) {
+        try { const c = await svc.getCharacteristic(cId); _btChar = c; return c; } catch (e) {}
+      }
+      const cs = await svc.getCharacteristics();
+      const c = cs.find(x => x.properties.writeWithoutResponse || x.properties.write) || cs[0] || null;
+      if (c) { _btChar = c; return c; }
+    } catch (e) {}
+  }
+  throw new Error('Karakteristik printer tidak ditemukan');
+}
+
+async function _writeToPrinter(char, data) {
+  const CHUNK = 128;
+  const useWithout = char.properties.writeWithoutResponse && !char.properties.write;
+  for (let i = 0; i < data.length; i += CHUNK) {
+    const chunk = data.slice(i, i + CHUNK);
+    if (useWithout) await char.writeValueWithoutResponse(chunk);
+    else await char.writeValue(chunk);
+    await new Promise(r => setTimeout(r, 60));
+  }
+}
+
+// Preconnect fire-and-forget — called when POS/receipt UI shows so first print is instant.
+function warmPrinter() {
+  if (!navigator.bluetooth || !localStorage.getItem(_BT_ID_KEY)) return;
+  _reconnectBtSilent().catch(() => {});
+}
+
 async function printBluetooth() {
-  if (!navigator.bluetooth) { toast('Browser tidak mendukung Bluetooth. Gunakan Chrome.','err'); return; }
+  if (!navigator.bluetooth) {
+    toast('Browser tidak mendukung Bluetooth. Buka via Chrome (Android) atau install aplikasi.', 'err');
+    return;
+  }
   const el = g('receipt-body'); if (!el) return;
-  // Get current order from receipt body data
   const ordId = el.dataset.orderId;
   const o = orders.find(x => x.id === ordId);
-  if (!o) { toast('Data pesanan tidak ditemukan','err'); return; }
-  toast('Menghubungkan ke printer...');
+  if (!o) { toast('Data pesanan tidak ditemukan', 'err'); return; }
+
+  const savedId = localStorage.getItem(_BT_ID_KEY);
+  toast(savedId ? 'Menyambung printer...' : 'Pilih printer Bluetooth...');
+
+  const doPrintOnce = async () => {
+    // Interactive only if user has NEVER paired — otherwise silent + throw on failure
+    const dev = await _getBtDevice({ interactive: !savedId });
+    if (!dev) throw Object.assign(new Error('no-device'), { code: 'no-device' });
+    const char = await _getBtChar(dev);
+    const data = await buildEscReceiptResto(o);
+    await _writeToPrinter(char, data);
+  };
+
   try {
-    const dev = await _getBtDevice();
-    const server = await dev.gatt.connect();
-    let char = null;
-    for (const svcId of _BT_SVCS) {
-      try {
-        const svc = await server.getPrimaryService(svcId);
-        for (const cId of _BT_CHARS) { try { char = await svc.getCharacteristic(cId); break; } catch(e){} }
-        if (!char) { const cs = await svc.getCharacteristics(); char = cs.find(c=>c.properties.writeWithoutResponse||c.properties.write)||cs[0]||null; }
-        if (char) break;
-      } catch(e){}
-    }
-    if (!char) { toast('Karakteristik printer tidak ditemukan','err'); return; }
-    const data = buildEscReceiptResto(o);
-    const CHUNK = 128;
-    const useWithout = char.properties.writeWithoutResponse && !char.properties.write;
-    for (let i=0; i<data.length; i+=CHUNK) {
-      const chunk = data.slice(i, i+CHUNK);
-      if (useWithout) await char.writeValueWithoutResponse(chunk); else await char.writeValue(chunk);
-      await new Promise(r=>setTimeout(r,60));
-    }
+    await doPrintOnce();
     toast('Berhasil dicetak!');
-  } catch(e) {
-    if (e.name==='NotFoundError'||e.name==='NotAllowedError') { toast('Pemilihan printer dibatalkan.','warn'); _btDev=null; localStorage.removeItem(_BT_ID_KEY); }
-    else { toast('Gagal cetak: '+e.message,'err'); _btDev=null; }
+  } catch (e) {
+    // Transient GATT issues → retry once after fresh reconnect
+    const transient = /GATT|Network|disconnect|not connected|InvalidState|NotSupported/i.test(e.message || '');
+    if (transient && savedId) {
+      try {
+        _btChar = null;
+        if (_btDev && _btDev.gatt && _btDev.gatt.connected) { try { _btDev.gatt.disconnect(); } catch (_) {} }
+        await new Promise(r => setTimeout(r, 400));
+        await doPrintOnce();
+        toast('Berhasil dicetak!');
+        return;
+      } catch (e2) { e = e2; }
+    }
+    if (e.code === 'no-device' || e.name === 'NotFoundError') {
+      toast('Printer tidak dapat dijangkau. Buka menu Printer untuk memilih ulang.', 'err');
+    } else if (e.name === 'NotAllowedError') {
+      toast('Izin Bluetooth ditolak.', 'warn');
+    } else {
+      toast('Gagal cetak: ' + (e.message || e), 'err');
+    }
   }
+}
+
+// ─── Printer Settings Modal (accessible dari POS untuk owner & staff) ────────
+
+function openPrinterModal() {
+  _renderPrinterStatus();
+  // Sync paper width radio
+  document.querySelectorAll('input[name="printer-width-pos"]').forEach(r => {
+    r.checked = (r.value === String(printerWidth));
+  });
+  openModal('m-printer');
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  // Show install button if the browser has queued an install prompt
+  const installBtn = g('btn-install-pwa');
+  if (installBtn) {
+    const inStandalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    installBtn.style.display = (window.deferredInstallPrompt && !inStandalone) ? '' : 'none';
+  }
+  // Attempt silent reconnect then refresh status when it settles
+  if (localStorage.getItem(_BT_ID_KEY)) {
+    _reconnectBtSilent().finally(() => _renderPrinterStatus());
+  }
+}
+
+function _renderPrinterStatus() {
+  const el = g('printer-status');
+  if (!el) return;
+  const savedId = localStorage.getItem(_BT_ID_KEY);
+  const connected = _btDev && _btDev.gatt && _btDev.gatt.connected;
+  if (connected) {
+    el.innerHTML = `<span style="color:var(--gr);font-weight:600">&#x25CF; Terhubung</span><br>
+      <span style="font-size:12px;color:var(--t2)">${esc(_btDev.name || 'Printer')}</span>`;
+  } else if (savedId) {
+    el.innerHTML = `<span style="color:var(--am);font-weight:600">&#x25CF; Tersimpan (belum terhubung)</span><br>
+      <span style="font-size:12px;color:var(--t2)">Printer akan otomatis dihubungkan saat mencetak.</span>`;
+  } else {
+    el.innerHTML = `<span style="color:var(--t2);font-weight:600">&#x25CB; Belum ada printer</span><br>
+      <span style="font-size:12px;color:var(--t2)">Tekan "Sambungkan / Ganti" untuk memilih printer Bluetooth.</span>`;
+  }
+}
+
+async function btConnectPrinter() {
+  if (!navigator.bluetooth) { toast('Browser tidak mendukung Bluetooth. Gunakan Chrome Android atau install PWA.', 'err'); return; }
+  toast('Memilih printer...');
+  try {
+    _btChar = null;
+    const dev = await _pairBtInteractive();
+    toast('Printer tersambung: ' + (dev.name || dev.id));
+    _renderPrinterStatus();
+  } catch (e) {
+    if (e.name === 'NotFoundError' || e.name === 'NotAllowedError') toast('Pemilihan printer dibatalkan.', 'warn');
+    else toast('Gagal menyambung: ' + e.message, 'err');
+  }
+}
+
+function btForgetPrinter() {
+  if (!confirm('Lupakan printer yang tersimpan?')) return;
+  try { if (_btDev && _btDev.gatt && _btDev.gatt.connected) _btDev.gatt.disconnect(); } catch (e) {}
+  // Also revoke Web Bluetooth permission if the API is available (Chrome ≥85)
+  try {
+    if (_btDev && typeof _btDev.forget === 'function') _btDev.forget();
+  } catch (e) {}
+  _btDev = null;
+  _btChar = null;
+  localStorage.removeItem(_BT_ID_KEY);
+  toast('Printer dilupakan');
+  _renderPrinterStatus();
+}
+
+async function btTestPrint() {
+  if (!navigator.bluetooth) { toast('Browser tidak mendukung Bluetooth.', 'err'); return; }
+  const savedId = localStorage.getItem(_BT_ID_KEY);
+  toast('Mengirim test print...');
+  try {
+    const dev = await _getBtDevice({ interactive: !savedId });
+    if (!dev) throw new Error('Printer tidak ditemukan. Sambungkan terlebih dahulu.');
+    const char = await _getBtChar(dev);
+    const ESC = 0x1B, GS = 0x1D;
+    const cols = (typeof printerCols === 'function') ? printerCols() : 32;
+    const parts = [
+      escCmd(ESC, 0x40),
+      escCmd(ESC, 0x61, 0x01),
+      escCmd(ESC, 0x45, 0x01), escCmd(GS, 0x21, 0x11),
+      escText('TEST PRINT\n'),
+      escCmd(GS, 0x21, 0x00), escCmd(ESC, 0x45, 0x00),
+      escText((storeName || 'KasirHnY') + '\n'),
+      escText('Lebar: ' + printerPaperMM() + ' mm (' + cols + ' kolom)\n'),
+      escText(new Date().toLocaleString('id-ID') + '\n\n'),
+      escText('-'.repeat(cols) + '\n'),
+      escText('Jika teks ini rapi, printer siap.\n'),
+      escText('-'.repeat(cols) + '\n\n\n'),
+      escCmd(GS, 0x56, 0x42, 0x00)
+    ];
+    await _writeToPrinter(char, concatBuf(...parts));
+    toast('Test print terkirim!');
+    _renderPrinterStatus();
+  } catch (e) {
+    if (e.name === 'NotFoundError' || e.name === 'NotAllowedError') toast('Pemilihan printer dibatalkan.', 'warn');
+    else toast('Gagal test print: ' + (e.message || e), 'err');
+    _renderPrinterStatus();
+  }
+}
+
+// Ubah lebar kertas dari modal POS (tersedia untuk owner & staff).
+function savePrinterWidthQuick(val) {
+  if (val !== '55' && val !== '80') return;
+  printerWidth = val;
+  syncSettings();
+  toast('Ukuran kertas: ' + val + ' mm');
 }
 
 // ─── POS Input Handlers ───────────────────────────────────────────────────────

@@ -25,6 +25,10 @@ let storeName = 'KasirHnY';
 let storeAddr = '';
 let storeWa = '';
 let storeFooter = 'Terima kasih telah berkunjung!';
+let storeLogo = '';       // original uploaded image (data URL)
+let storeLogoBW = '';     // auto-converted black & white PNG (data URL)
+let printerWidth = '80';  // '55' or '80' (mm)
+let receiptLink = '';     // e-receipt / feedback link printed at bottom
 
 // UI State
 let curPage = 'dashboard';
@@ -1344,6 +1348,15 @@ function renderSettings() {
   se('set-store-name', storeName);
   se('set-store-addr', storeAddr);
   se('set-store-wa', storeWa);
+  se('set-store-footer', storeFooter);
+  se('set-receipt-link', receiptLink);
+
+  // Printer width radio
+  document.querySelectorAll('input[name="printer-width"]').forEach(r => {
+    r.checked = (r.value === String(printerWidth));
+  });
+
+  _renderLogoPreview();
 
   renderEmpList();
   renderOutletList();
@@ -1353,8 +1366,108 @@ function saveStoreInfo() {
   storeName = g('set-store-name').value.trim() || storeName;
   storeAddr = g('set-store-addr').value.trim();
   storeWa = g('set-store-wa').value.trim();
+  const ft = g('set-store-footer');
+  if (ft) storeFooter = ft.value.trim();
+  const rl = g('set-receipt-link');
+  if (rl) receiptLink = rl.value.trim();
+  const pw = document.querySelector('input[name="printer-width"]:checked');
+  if (pw) printerWidth = pw.value;
   syncSettings();
   toast('Informasi toko disimpan');
+}
+
+// ─── Receipt Logo ─────────────────────────────────────────────────────────────
+
+function _renderLogoPreview() {
+  const wrap = g('logo-preview');
+  if (!wrap) return;
+  if (storeLogoBW) {
+    wrap.innerHTML = `<img src="${storeLogoBW}" alt="Logo BW" style="max-width:120px;max-height:120px;background:#fff;padding:6px;border:1px solid var(--b2);border-radius:6px">
+      <button type="button" class="btn btn-sec btn-sm" onclick="removeStoreLogo()" style="margin-left:12px">Hapus Logo</button>`;
+  } else {
+    wrap.innerHTML = `<div style="font-size:12px;color:var(--t2)">Belum ada logo. Upload gambar untuk ditampilkan di atas struk.</div>`;
+  }
+}
+
+function onLogoFilePicked(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { toast('File harus berupa gambar', 'err'); return; }
+  if (file.size > 3 * 1024 * 1024) { toast('Ukuran logo maksimal 3 MB', 'err'); return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const { color, bw } = _logoToBW(img);
+      storeLogo = color;
+      storeLogoBW = bw;
+      syncSettings();
+      _renderLogoPreview();
+      toast('Logo disimpan');
+      input.value = '';
+    };
+    img.onerror = () => toast('Gagal membaca gambar', 'err');
+    img.src = ev.target.result;
+  };
+  reader.onerror = () => toast('Gagal membaca file', 'err');
+  reader.readAsDataURL(file);
+}
+
+function removeStoreLogo() {
+  if (!confirm('Hapus logo struk?')) return;
+  storeLogo = '';
+  storeLogoBW = '';
+  syncSettings();
+  _renderLogoPreview();
+  toast('Logo dihapus');
+}
+
+// Downscale + threshold to pure B/W (1-bit look, stored as PNG data URL).
+function _logoToBW(img) {
+  const maxW = 384; // matches ~58mm printer raster; scales down on 55mm and up-fits on 80mm
+  const scale = Math.min(1, maxW / img.width);
+  const w = Math.max(8, Math.round(img.width * scale));
+  const h = Math.max(8, Math.round(img.height * scale));
+
+  // Color-preserved (downscaled) version for reference
+  const cv1 = document.createElement('canvas');
+  cv1.width = w; cv1.height = h;
+  const cx1 = cv1.getContext('2d');
+  cx1.fillStyle = '#fff'; cx1.fillRect(0, 0, w, h);
+  cx1.drawImage(img, 0, 0, w, h);
+  const color = cv1.toDataURL('image/png');
+
+  // BW threshold version
+  const cv2 = document.createElement('canvas');
+  cv2.width = w; cv2.height = h;
+  const cx2 = cv2.getContext('2d');
+  cx2.fillStyle = '#fff'; cx2.fillRect(0, 0, w, h);
+  cx2.drawImage(img, 0, 0, w, h);
+  const imgData = cx2.getImageData(0, 0, w, h);
+  const px = imgData.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const alpha = px[i + 3];
+    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    // Transparent → white; else threshold at ~150 (a bit lenient so line art stays)
+    const black = alpha > 100 && lum < 150;
+    const v = black ? 0 : 255;
+    px[i] = px[i + 1] = px[i + 2] = v;
+    px[i + 3] = 255;
+  }
+  cx2.putImageData(imgData, 0, 0);
+  const bw = cv2.toDataURL('image/png');
+
+  return { color, bw };
+}
+
+// Printer columns for monospace formatting (Bluetooth ESC/POS)
+function printerCols() {
+  return String(printerWidth) === '55' ? 32 : 48;
+}
+
+// Printer paper width in mm (for browser print CSS)
+function printerPaperMM() {
+  return String(printerWidth) === '55' ? 55 : 80;
 }
 
 async function changeOwnerPwd() {
