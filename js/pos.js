@@ -6,10 +6,7 @@
 let cart = []; // [{id, name, price, qty, lineTotal, catId}]
 let posActiveCat = 'all';
 let posSearch = '';
-let posCustName = '';
-let posTableNo = '';
 let posPayMethod = 'Tunai';
-let posNotes = '';
 let posSubtotal = 0;
 let posPromoAmt = 0;
 let posTotal = 0;
@@ -125,14 +122,6 @@ function renderPOSCart() {
   se('cart-promo-amt', '-' + fmt(posPromoAmt));
   se('cart-total', fmt(posTotal));
 
-  // Sync input fields
-  const cn = g('pos-cust-name');
-  const tn = g('pos-table-no');
-  const nt = g('pos-notes');
-  if (cn && cn.value !== posCustName) cn.value = posCustName;
-  if (tn && tn.value !== posTableNo) tn.value = posTableNo;
-  if (nt && nt.value !== posNotes) nt.value = posNotes;
-
   // Payment method
   document.querySelectorAll('.pay-method-btn').forEach(b => {
     b.classList.toggle('on', b.dataset.method === posPayMethod);
@@ -204,9 +193,6 @@ function recalcCart() {
 
 function clearCart() {
   cart = [];
-  posTableNo = '';
-  posCustName = '';
-  posNotes = '';
   posActiveCat = 'all';
   renderPOS();
 }
@@ -228,9 +214,9 @@ function placeOrder() {
     payMethod: posPayMethod,
     payStatus: 'Lunas',
     status: 'Selesai',
-    tableNo: posTableNo,
-    custName: posCustName,
-    notes: posNotes,
+    tableNo: '',
+    custName: '',
+    notes: '',
     date: todayStr(),
     isoDate: new Date().toISOString(),
     handledBy: curStaff?.name || 'Owner',
@@ -300,10 +286,6 @@ function buildReceiptHTML(o) {
   const time = _receiptTime(o);
   const outlet = _receiptOutlet(o);
   const payMethod = o.payMethod || 'Tunai';
-  const bayarLabel = 'Bayar (' + payMethod + ')';
-  // All orders are Lunas → bayar = total, kembali = 0
-  const bayarAmt = o.total;
-  const kembali = 0;
 
   const logoHTML = storeLogoBW
     ? `<div class="r-logo"><img src="${storeLogoBW}" alt="logo"></div>`
@@ -364,8 +346,7 @@ function buildReceiptHTML(o) {
         <div class="r-row"><span>Sub Total</span><span>Rp ${fmtAmt(o.subtotal)}</span></div>
         ${o.promoAmt > 0 ? `<div class="r-row"><span>Diskon Promo</span><span>-Rp ${fmtAmt(o.promoAmt)}</span></div>` : ''}
         <div class="r-row r-row-total"><span>Total</span><span>Rp ${fmtAmt(o.total)}</span></div>
-        <div class="r-row"><span>${esc(bayarLabel)}</span><span>Rp ${fmtAmt(bayarAmt)}</span></div>
-        <div class="r-row"><span>Kembali</span><span>Rp ${fmtAmt(kembali)}</span></div>
+        <div class="r-row"><span>Metode Bayar</span><span>${esc(payMethod)}</span></div>
       </div>
 
       ${o.notes ? `<div class="r-notes">Catatan: ${esc(o.notes)}</div>` : ''}
@@ -641,8 +622,7 @@ async function buildEscReceiptResto(o) {
   parts.push(escText(padLR('Sub Total', 'Rp ' + fmtAmt(o.subtotal))));
   if ((o.promoAmt || 0) > 0) parts.push(escText(padLR('Diskon Promo', '-Rp ' + fmtAmt(o.promoAmt))));
   parts.push(BON, escText(padLR('Total', 'Rp ' + fmtAmt(o.total))), BOFF);
-  parts.push(escText(padLR('Bayar (' + (o.payMethod || 'Tunai') + ')', 'Rp ' + fmtAmt(o.total))));
-  parts.push(escText(padLR('Kembali', 'Rp 0')));
+  parts.push(escText(padLR('Metode Bayar', o.payMethod || 'Tunai')));
 
   if (o.notes) parts.push(escText('\nCatatan: ' + o.notes + '\n'));
 
@@ -918,18 +898,6 @@ function savePrinterWidthQuick(val) {
 function onPOSSearch(val) {
   posSearch = val;
   renderPOSMenu();
-}
-
-function onPOSCustName(val) {
-  posCustName = val;
-}
-
-function onPOSTableNo(val) {
-  posTableNo = val;
-}
-
-function onPOSNotes(val) {
-  posNotes = val;
 }
 
 function setPayMethod(method) {
