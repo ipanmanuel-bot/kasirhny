@@ -227,7 +227,7 @@ function placeOrder() {
     total: posTotal,
     payMethod: posPayMethod,
     payStatus: 'Lunas',
-    status: 'Baru',
+    status: 'Selesai',
     tableNo: posTableNo,
     custName: posCustName,
     notes: posNotes,
@@ -509,16 +509,6 @@ function _wrapCols(text, cols) {
   return lines.length ? lines : [''];
 }
 
-// Center each of an array of lines in the given column width.
-function _centerLines(lines, cols) {
-  return lines.map(l => {
-    const s = String(l);
-    if (s.length >= cols) return s;
-    const pad = Math.floor((cols - s.length) / 2);
-    return ' '.repeat(pad) + s;
-  });
-}
-
 // Build ESC/POS GS v 0 raster bitmap command from a data URL image.
 // Returns Uint8Array or null on failure.
 async function _escLogoRaster(dataUrl, printerDots) {
@@ -583,7 +573,13 @@ async function buildEscReceiptResto(o) {
     if (gap > 0) return ls + ' '.repeat(gap) + rs + '\n';
     return ls + '\n' + ' '.repeat(Math.max(0, cols - rs.length)) + rs + '\n';
   };
-  const centerText = (s) => _centerLines(_wrapCols(s, cols), cols).join('\n') + '\n';
+  // Only wrap for centered blocks — the printer's ESC a 1 handles the actual
+  // centering. Manual space-padding would double-center (esp. wrong under
+  // double-width FLARGE) and shift text to the right.
+  const wrapForCenter = (s, wide) => {
+    const effCols = wide ? Math.floor(cols / 2) : cols;
+    return _wrapCols(s, effCols).join('\n') + '\n';
+  };
 
   const parts = [INIT];
 
@@ -593,14 +589,14 @@ async function buildEscReceiptResto(o) {
     if (raster) parts.push(raster);
   }
 
-  // Header (centered)
+  // Header (centered — rely on printer ESC a 1, only wrap long text)
   parts.push(AL_C);
   if (storeName) {
-    parts.push(FLARGE, BON, escText(centerText(storeName)), BOFF, FNORM);
+    parts.push(FLARGE, BON, escText(wrapForCenter(storeName, true)), BOFF, FNORM);
   }
-  if (storeAddr) parts.push(escText(centerText(storeAddr)));
-  if (storeWa) parts.push(escText(centerText('No. Telp ' + storeWa)));
-  parts.push(escText(centerText(o.id)));
+  if (storeAddr) parts.push(escText(wrapForCenter(storeAddr, false)));
+  if (storeWa) parts.push(escText(wrapForCenter('No. Telp ' + storeWa, false)));
+  parts.push(escText(wrapForCenter(o.id, false)));
 
   // Divider + meta
   parts.push(AL_L, dash);
@@ -650,13 +646,13 @@ async function buildEscReceiptResto(o) {
 
   if (o.notes) parts.push(escText('\nCatatan: ' + o.notes + '\n'));
 
-  // Footer (centered)
+  // Footer (centered — printer handles alignment)
   parts.push(NL, AL_C);
-  parts.push(escText(centerText(storeFooter || 'Terima kasih telah berbelanja')));
+  parts.push(escText(wrapForCenter(storeFooter || 'Terima kasih telah berbelanja', false)));
   if (receiptLink) {
     parts.push(NL);
-    parts.push(escText(centerText('Link Kritik dan Saran:')));
-    parts.push(escText(centerText(receiptLink)));
+    parts.push(escText(wrapForCenter('Link Kritik dan Saran:', false)));
+    parts.push(escText(wrapForCenter(receiptLink, false)));
   }
 
   parts.push(NL, NL, NL, CUT);

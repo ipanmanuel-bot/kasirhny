@@ -33,8 +33,6 @@ let receiptLink = '';     // e-receipt / feedback link printed at bottom
 // UI State
 let curPage = 'dashboard';
 let dashPeriod = 'today';
-let ordFilterStatus = '';
-let ordFilterPay = '';
 let ordDateFilter = 'today';
 let kasDateFilter = 'today';
 let ordPage = 1;
@@ -114,17 +112,26 @@ async function hashSecret(s) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function _localYMD(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function isoToDate(iso) {
-  // Returns YYYY-MM-DD from ISO string
+  // Return YYYY-MM-DD in the user's LOCAL timezone.
+  // Slicing iso.slice(0,10) would give the UTC date, causing early-morning
+  // WIB (UTC+7) orders to fall on the previous day and disappear from
+  // "Hari Ini" filters.
   if (!iso) return '';
-  return iso.slice(0, 10);
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso).slice(0, 10);
+  return _localYMD(d);
 }
 
 function getWeekStart() {
   const d = new Date();
   const day = d.getDay(); // 0=sun
   d.setDate(d.getDate() - day);
-  return d.toISOString().slice(0, 10);
+  return _localYMD(d);
 }
 
 function getMonthStart() {
@@ -527,8 +534,6 @@ function renderOrders() {
     if (ordDateFilter === 'today') { if (d !== today) return false; }
     else if (ordDateFilter === 'week') { if (d < weekStart) return false; }
     else if (ordDateFilter === 'month') { if (d < monthStart) return false; }
-    if (ordFilterStatus && o.status !== ordFilterStatus) return false;
-    if (ordFilterPay && o.payStatus !== ordFilterPay) return false;
     return true;
   });
 
@@ -548,14 +553,13 @@ function renderOrders() {
       <div class="order-card" onclick="openOrderDetail('${esc(o.id)}')">
         <div class="order-card-header">
           <span class="order-id">${esc(o.id)}</span>
-          <span class="badge ${o.status === 'Selesai' ? 'badge-gr' : 'badge-am'}">${esc(o.status)}</span>
+          <span class="badge ${o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re'}">${esc(o.payStatus)}</span>
         </div>
         <div class="order-card-body">
           <span class="order-meta">${esc(o.date)}${o.custName ? ' &bull; ' + esc(o.custName) : ''}${o.tableNo ? ' &bull; Meja ' + esc(o.tableNo) : ''}</span>
           <span class="order-total">${fmt(o.total)}</span>
         </div>
         <div class="order-card-footer">
-          <span class="badge ${o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re'}">${esc(o.payStatus)}</span>
           <span class="order-pay-method">${esc(o.payMethod)}</span>
         </div>
       </div>
@@ -594,23 +598,6 @@ function setOrdDateFilter(v) {
   renderOrders();
 }
 
-function setOrdFilter(type, val) {
-  if (type === 'status') { ordFilterStatus = ordFilterStatus === val ? '' : val; }
-  if (type === 'pay') { ordFilterPay = ordFilterPay === val ? '' : val; }
-  ordPage = 1;
-  _updateOrdFilterBtns();
-  renderOrders();
-}
-
-function _updateOrdFilterBtns() {
-  document.querySelectorAll('.ord-filter-btn[data-type="status"]').forEach(b => {
-    b.classList.toggle('on', b.dataset.val === ordFilterStatus);
-  });
-  document.querySelectorAll('.ord-filter-btn[data-type="pay"]').forEach(b => {
-    b.classList.toggle('on', b.dataset.val === ordFilterPay);
-  });
-}
-
 function openOrderDetail(id) {
   const o = orders.find(x => x.id === id);
   if (!o) return;
@@ -643,25 +630,46 @@ function openOrderDetail(id) {
     </div>
     <div class="detail-actions">
       <div class="detail-badges">
-        <span class="badge ${o.status === 'Selesai' ? 'badge-gr' : 'badge-am'}">${esc(o.status)}</span>
         <span class="badge ${o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re'}">${esc(o.payStatus)}</span>
       </div>
       <div class="detail-btns">
-        ${o.status !== 'Selesai' ? `<button class="btn btn-sm btn-sec" onclick="setOrderStatus('${esc(o.id)}','Selesai');closeModal('m-order-detail')">Tandai Selesai</button>` : ''}
         ${o.payStatus !== 'Lunas' ? `<button class="btn btn-sm btn-p" onclick="setOrderPayStatus('${esc(o.id)}','Lunas');closeModal('m-order-detail')">Tandai Lunas</button>` : ''}
+        <button class="btn btn-sm btn-danger" onclick="deleteOrder('${esc(o.id)}')">
+          <i data-lucide="trash-2" style="width:14px;height:14px"></i> Hapus Pesanan
+        </button>
       </div>
     </div>
   `;
   openModal('m-order-detail');
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function setOrderStatus(id, status) {
+function deleteOrder(id) {
   const o = orders.find(x => x.id === id);
   if (!o) return;
-  o.status = status;
-  syncOrder(o);
-  toast('Status diperbarui: ' + status);
+  if (!confirm('Hapus pesanan ' + id + '? Entri kas terkait juga akan dihapus.')) return;
+
+  // Remove from local state + persist
+  orders = orders.filter(x => x.id !== id);
+  syncAllOrders();
+  if (typeof sbDelete === 'function') sbDelete('orders', id);
+
+  // Also remove auto-generated kas entries linked to this order
+  const kasTag = 'Penjualan - ' + id;
+  const kasToDelete = kasLog.filter(k => k.desc === kasTag);
+  if (kasToDelete.length) {
+    kasLog = kasLog.filter(k => k.desc !== kasTag);
+    syncAllKas();
+    if (typeof sbDelete === 'function') {
+      kasToDelete.forEach(k => sbDelete('kas_log', k.id));
+    }
+  }
+
+  closeModal('m-order-detail');
+  toast('Pesanan dihapus');
   renderOrders();
+  if (curPage === 'kas' && typeof renderKas === 'function') renderKas();
+  if (curPage === 'dashboard' && typeof refreshDash === 'function') refreshDash();
 }
 
 function setOrderPayStatus(id, ps) {
