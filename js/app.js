@@ -38,6 +38,8 @@ let dashPS = { mode: 'day', offset: 0 };
 let ordPS = { mode: 'day', offset: 0 };
 let kasPS = { mode: 'day', offset: 0 };
 let repPS = { mode: 'day', offset: 0 };
+let repMenuSort = { key: 'qty', dir: 'desc' };
+let repMenuPage = 1;
 let ordPage = 1;
 
 // Menu management tabs
@@ -1238,6 +1240,49 @@ function _reportData() {
   };
 }
 
+// Sort a report menu row list by the given key/dir.
+function _sortMenus(menus, key, dir) {
+  const mult = dir === 'asc' ? 1 : -1;
+  const catNameFor = (cid) => cid === '_unknown' ? '' : (menuCats.find(c => c.id === cid)?.name || '');
+  const arr = menus.slice();
+  arr.sort((a, b) => {
+    let av, bv;
+    if (key === 'name') { av = a.name.toLowerCase(); bv = b.name.toLowerCase(); }
+    else if (key === 'cat') { av = catNameFor(a.catId).toLowerCase(); bv = catNameFor(b.catId).toLowerCase(); }
+    else if (key === 'qty') { av = a.qty; bv = b.qty; }
+    else { av = a.revenue; bv = b.revenue; }
+    if (av < bv) return -1 * mult;
+    if (av > bv) return 1 * mult;
+    return 0;
+  });
+  return arr;
+}
+
+// Toggle sort on a column: same key → flip direction; different key → default
+// desc for numeric, asc for text.
+function setRepMenuSort(key) {
+  if (repMenuSort.key === key) {
+    repMenuSort.dir = repMenuSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    repMenuSort.key = key;
+    repMenuSort.dir = (key === 'name' || key === 'cat') ? 'asc' : 'desc';
+  }
+  repMenuPage = 1;
+  renderReport();
+}
+
+function repMenuGo(p) { repMenuPage = p; renderReport(); }
+
+function _sortInd(key) {
+  const active = repMenuSort.key === key;
+  const arrow = !active ? '↕' : (repMenuSort.dir === 'asc' ? '↑' : '↓');
+  return `<span class="sort-ind">${arrow}</span>`;
+}
+
+function _sortClass(key) {
+  return 'sortable' + (repMenuSort.key === key ? ' sort-on' : '');
+}
+
 function renderReport() {
   renderPeriodNav('rep-period-nav', repPS, renderReport);
 
@@ -1246,46 +1291,7 @@ function renderReport() {
 
   const data = _reportData();
 
-  const se = (id, v) => { const el = g(id); if (el) el.textContent = v; };
-  se('rep-revenue', fmt(data.totalRevenue));
-  se('rep-orders', data.orderCount);
-  se('rep-items', data.totalItems);
-  se('rep-uniq', data.menus.length);
-
-  // Menu table
-  const menuEl = g('rep-menu-table');
-  if (menuEl) {
-    if (!data.menus.length) {
-      menuEl.innerHTML = '<div class="rep-empty">Belum ada penjualan pada periode ini</div>';
-    } else {
-      const rows = data.menus.map((m, i) => {
-        const catName = m.catId === '_unknown'
-          ? '—'
-          : (menuCats.find(c => c.id === m.catId)?.name || '—');
-        return `<tr>
-          <td class="rank">${i + 1}</td>
-          <td>${esc(m.name)}</td>
-          <td>${esc(catName)}</td>
-          <td class="num">${m.qty}</td>
-          <td class="num">${fmt(m.revenue)}</td>
-        </tr>`;
-      }).join('');
-      menuEl.innerHTML = `<table class="rep-tbl">
-        <thead><tr>
-          <th class="rank">#</th><th>Nama Menu</th><th>Kategori</th>
-          <th class="num">Qty</th><th class="num">Pendapatan</th>
-        </tr></thead>
-        <tbody>
-          ${rows}
-          <tr class="total-row"><td colspan="3">TOTAL</td>
-            <td class="num">${data.totalItems}</td>
-            <td class="num">${fmt(data.totalRevenue)}</td></tr>
-        </tbody>
-      </table>`;
-    }
-  }
-
-  // Category table
+  // Category table (unsorted here — comes pre-sorted by qty desc from _reportData)
   const catEl = g('rep-cat-table');
   if (catEl) {
     if (!data.cats.length) {
@@ -1314,6 +1320,64 @@ function renderReport() {
     }
   }
 
+  // Menu table — sortable + paginated (10/page)
+  const menuEl = g('rep-menu-table');
+  const pgEl = g('rep-menu-pagination');
+  if (menuEl) {
+    if (!data.menus.length) {
+      menuEl.innerHTML = '<div class="rep-empty">Belum ada penjualan pada periode ini</div>';
+      if (pgEl) pgEl.innerHTML = '';
+    } else {
+      const sorted = _sortMenus(data.menus, repMenuSort.key, repMenuSort.dir);
+      const perPage = 10;
+      const total = sorted.length;
+      const pages = Math.ceil(total / perPage) || 1;
+      if (repMenuPage > pages) repMenuPage = pages;
+      const startIdx = (repMenuPage - 1) * perPage;
+      const paginated = sorted.slice(startIdx, startIdx + perPage);
+
+      const rows = paginated.map((m, i) => {
+        const catName = m.catId === '_unknown'
+          ? '—'
+          : (menuCats.find(c => c.id === m.catId)?.name || '—');
+        return `<tr>
+          <td class="rank">${startIdx + i + 1}</td>
+          <td>${esc(m.name)}</td>
+          <td>${esc(catName)}</td>
+          <td class="num">${m.qty}</td>
+          <td class="num">${fmt(m.revenue)}</td>
+        </tr>`;
+      }).join('');
+
+      menuEl.innerHTML = `<table class="rep-tbl">
+        <thead><tr>
+          <th class="rank">#</th>
+          <th class="${_sortClass('name')}" onclick="setRepMenuSort('name')">Nama Menu ${_sortInd('name')}</th>
+          <th class="${_sortClass('cat')}" onclick="setRepMenuSort('cat')">Kategori ${_sortInd('cat')}</th>
+          <th class="num ${_sortClass('qty')}" onclick="setRepMenuSort('qty')">Qty ${_sortInd('qty')}</th>
+          <th class="num ${_sortClass('rev')}" onclick="setRepMenuSort('rev')">Pendapatan ${_sortInd('rev')}</th>
+        </tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row"><td colspan="3">TOTAL</td>
+            <td class="num">${data.totalItems}</td>
+            <td class="num">${fmt(data.totalRevenue)}</td></tr>
+        </tbody>
+      </table>`;
+
+      if (pgEl) {
+        if (pages <= 1) { pgEl.innerHTML = ''; }
+        else {
+          pgEl.innerHTML = `
+            <button class="pg-btn" onclick="repMenuGo(${repMenuPage - 1})" ${repMenuPage <= 1 ? 'disabled' : ''}>Sebelumnya</button>
+            <span class="pg-info">Hal ${repMenuPage} / ${pages} · ${total} menu</span>
+            <button class="pg-btn" onclick="repMenuGo(${repMenuPage + 1})" ${repMenuPage >= pages ? 'disabled' : ''}>Berikutnya</button>
+          `;
+        }
+      }
+    }
+  }
+
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
@@ -1325,7 +1389,8 @@ function exportReportCSV(kind) {
 
   if (kind === 'menu') {
     rows.push(['#', 'Nama Menu', 'Kategori', 'Qty', 'Pendapatan']);
-    data.menus.forEach((m, i) => {
+    const sorted = _sortMenus(data.menus, repMenuSort.key, repMenuSort.dir);
+    sorted.forEach((m, i) => {
       const catName = m.catId === '_unknown' ? '—' : (menuCats.find(c => c.id === m.catId)?.name || '—');
       rows.push([i + 1, m.name, catName, m.qty, m.revenue]);
     });

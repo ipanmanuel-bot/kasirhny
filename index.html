@@ -371,6 +371,11 @@
     .rep-tbl .rank { color:var(--t3); width:32px; }
     .rep-tbl tr.total-row td { font-weight:700; background:var(--pl); border-top:2px solid var(--b1); }
     .rep-empty { padding:40px 20px; text-align:center; color:var(--t2); font-size:13px; }
+    .rep-tbl th.sortable { cursor:pointer; user-select:none; }
+    .rep-tbl th.sortable:hover { color:var(--p); }
+    .rep-tbl th .sort-ind { display:inline-block; margin-left:4px; font-size:9px; opacity:.4; }
+    .rep-tbl th.sort-on { color:var(--p); }
+    .rep-tbl th.sort-on .sort-ind { opacity:1; }
 
     .list-item {
       display: flex; align-items: center; gap: 12px;
@@ -1018,36 +1023,7 @@
         <div id="rep-period-nav"></div>
       </div>
 
-      <div class="dash-stats" style="margin-bottom:12px">
-        <div class="dsc dsc-total">
-          <div class="dsc-lbl">Total Pendapatan</div>
-          <div class="dsc-val" id="rep-revenue">Rp 0</div>
-        </div>
-        <div class="dsc">
-          <div class="dsc-lbl">Jumlah Pesanan</div>
-          <div class="dsc-val" id="rep-orders">0</div>
-        </div>
-        <div class="dsc">
-          <div class="dsc-lbl">Total Item Terjual</div>
-          <div class="dsc-val" id="rep-items">0</div>
-        </div>
-        <div class="dsc">
-          <div class="dsc-lbl">Menu Unik Terjual</div>
-          <div class="dsc-val" id="rep-uniq">0</div>
-        </div>
-      </div>
-
       <div class="card" style="padding:0;margin-bottom:12px">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center">
-          <div style="font-weight:700;font-size:14px">Rekap per Menu</div>
-          <button class="btn btn-sec btn-sm" onclick="exportReportCSV('menu')">
-            <i data-lucide="download" style="width:14px;height:14px"></i> Export CSV
-          </button>
-        </div>
-        <div id="rep-menu-table"></div>
-      </div>
-
-      <div class="card" style="padding:0">
         <div style="padding:14px 16px;border-bottom:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center">
           <div style="font-weight:700;font-size:14px">Rekap per Kategori</div>
           <button class="btn btn-sec btn-sm" onclick="exportReportCSV('cat')">
@@ -1055,6 +1031,17 @@
           </button>
         </div>
         <div id="rep-cat-table"></div>
+      </div>
+
+      <div class="card" style="padding:0">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700;font-size:14px">Rekap per Menu</div>
+          <button class="btn btn-sec btn-sm" onclick="exportReportCSV('menu')">
+            <i data-lucide="download" style="width:14px;height:14px"></i> Export CSV
+          </button>
+        </div>
+        <div id="rep-menu-table"></div>
+        <div class="pagination" id="rep-menu-pagination" style="padding:10px 16px 14px"></div>
       </div>
     </div>
 
