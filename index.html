@@ -261,19 +261,41 @@
     .ord-sep { width: 1px; height: 22px; background: var(--b1); flex-shrink: 0; }
     .orders-summary { font-size: 12px; color: var(--t2); margin-bottom: 12px; }
     .order-card {
+      display: grid;
+      grid-template-columns: 140px 1fr 90px 80px minmax(110px, auto);
+      gap: 12px;
+      align-items: center;
       background: var(--ca); border: 1.5px solid var(--b1); border-radius: var(--r);
-      padding: 14px 16px; margin-bottom: 10px; cursor: pointer; transition: .15s;
+      padding: 10px 14px; margin-bottom: 8px; cursor: pointer; transition: .15s;
       box-shadow: var(--sh);
     }
     .order-card:hover { border-color: var(--p); box-shadow: 0 0 0 3px var(--p20); }
-    .order-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-    .order-id { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--t1); }
-    .order-card-body { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-    .order-meta { font-size: 12px; color: var(--t2); }
-    .order-total { font-size: 15px; font-weight: 700; color: var(--p); }
-    .order-card-footer { display: flex; align-items: center; justify-content: space-between; }
-    .order-pay-method { font-size: 12px; color: var(--t2); }
+    .oc-id { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .oc-date { font-size: 12px; color: var(--t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .oc-pay { font-size: 12px; color: var(--t2); white-space: nowrap; }
+    .oc-status { justify-self: start; }
+    .oc-total { font-size: 15px; font-weight: 700; color: var(--p); text-align: right; white-space: nowrap; }
+    .oc-meta-mob { display: none; }
     .pg-info { font-size: 12px; color: var(--t2); }
+
+    @media (max-width: 720px) {
+      .order-card {
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto;
+        row-gap: 4px;
+        padding: 10px 12px;
+      }
+      .oc-id { grid-column: 1; grid-row: 1; font-size: 12.5px; }
+      .oc-total { grid-column: 2; grid-row: 1; font-size: 14px; }
+      .oc-meta-mob {
+        grid-column: 1 / -1; grid-row: 2;
+        display: flex !important; align-items: center; gap: 8px;
+        font-size: 11px; color: var(--t2); flex-wrap: wrap;
+      }
+      .oc-meta-mob .badge { font-size: 10px; padding: 1px 7px; }
+      /* Hide the desktop-only columns; contents shown in .oc-meta-mob */
+      .oc-date, .oc-pay, .oc-status { display: none; }
+    }
 
     /* ── Badges ─────────────────────────────────────────────────── */
     .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }

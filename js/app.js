@@ -607,11 +607,12 @@ function renderOrders() {
 
   let filtered = orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || '', ordPS));
 
+  const perPage = 10;
   const total = filtered.length;
-  const pages = Math.ceil(total / 15) || 1;
+  const pages = Math.ceil(total / perPage) || 1;
   if (ordPage > pages) ordPage = pages;
 
-  const paginated = filtered.slice((ordPage - 1) * 15, ordPage * 15);
+  const paginated = filtered.slice((ordPage - 1) * perPage, ordPage * perPage);
 
   const el = g('orders-list');
   if (!el) return;
@@ -619,21 +620,28 @@ function renderOrders() {
   if (!paginated.length) {
     el.innerHTML = '<div class="empty-state"><p>Belum ada pesanan</p></div>';
   } else {
-    el.innerHTML = paginated.map(o => `
-      <div class="order-card" onclick="openOrderDetail('${esc(o.id)}')">
-        <div class="order-card-header">
-          <span class="order-id">${esc(o.id)}</span>
-          <span class="badge ${o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re'}">${esc(o.payStatus)}</span>
+    el.innerHTML = paginated.map(o => {
+      const timePart = o.isoDate
+        ? new Date(o.isoDate).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        : '';
+      const dateStr = esc(o.date) + (timePart ? ' · ' + esc(timePart) : '');
+      const pay = esc(o.payMethod || '-');
+      const badgeClass = o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re';
+      const badgeText = esc(o.payStatus);
+      return `
+        <div class="order-card" onclick="openOrderDetail('${esc(o.id)}')">
+          <span class="oc-id">${esc(o.id)}</span>
+          <span class="oc-date">${dateStr}</span>
+          <span class="oc-pay">${pay}</span>
+          <span class="badge ${badgeClass} oc-status">${badgeText}</span>
+          <span class="oc-total">${fmt(o.total)}</span>
+          <span class="oc-meta-mob">
+            <span>${dateStr}</span> &bull; <span>${pay}</span> &bull;
+            <span class="badge ${badgeClass}">${badgeText}</span>
+          </span>
         </div>
-        <div class="order-card-body">
-          <span class="order-meta">${esc(o.date)}${o.custName ? ' &bull; ' + esc(o.custName) : ''}${o.tableNo ? ' &bull; Meja ' + esc(o.tableNo) : ''}</span>
-          <span class="order-total">${fmt(o.total)}</span>
-        </div>
-        <div class="order-card-footer">
-          <span class="order-pay-method">${esc(o.payMethod)}</span>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
   // Pagination
