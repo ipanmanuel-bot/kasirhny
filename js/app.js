@@ -33,9 +33,15 @@ let receiptLink = '';     // e-receipt / feedback link printed at bottom
 // UI State
 let curPage = 'dashboard';
 let dashPeriod = 'today';
+let dashFrom = '', dashTo = '';
 let ordDateFilter = 'today';
+let ordFrom = '', ordTo = '';
 let kasDateFilter = 'today';
 let ordPage = 1;
+
+// Report page
+let repPeriod = 'today';
+let repFrom = '', repTo = '';
 
 // Menu management tabs
 let menuTab = 'menu'; // 'menu' | 'cat'
@@ -137,6 +143,32 @@ function getWeekStart() {
 function getMonthStart() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// Check whether a local YYYY-MM-DD date falls in the requested period.
+// `period` ∈ 'today' | 'week' | 'month' | 'custom' | 'all'.
+function isInPeriod(dateISO, period, customFrom, customTo) {
+  if (!dateISO) return false;
+  if (period === 'today') return dateISO === todayISO();
+  if (period === 'week') return dateISO >= getWeekStart();
+  if (period === 'month') return dateISO >= getMonthStart();
+  if (period === 'custom') {
+    if (customFrom && dateISO < customFrom) return false;
+    if (customTo && dateISO > customTo) return false;
+    return true;
+  }
+  return true; // 'all'
+}
+
+function periodLabel(period, from, to) {
+  const map = { today: 'Hari Ini', week: 'Minggu Ini', month: 'Bulan Ini', all: 'Semua' };
+  if (period === 'custom') {
+    if (from && to) return from + ' → ' + to;
+    if (from) return 'Sejak ' + from;
+    if (to) return 'Sampai ' + to;
+    return 'Custom (pilih tanggal)';
+  }
+  return map[period] || '';
 }
 
 // ─── Seed Data ───────────────────────────────────────────────────────────────
@@ -387,7 +419,8 @@ function goPage(page, btn) {
   closeSidebar();
   const renders = {
     dashboard: refreshDash, orders: renderOrders, kas: renderKas,
-    menu: renderMenuPage, promo: renderPromo, settings: renderSettings, pos: renderPOS
+    menu: renderMenuPage, promo: renderPromo, settings: renderSettings, pos: renderPOS,
+    report: renderReport
   };
   if (renders[page]) renders[page]();
 }
@@ -409,11 +442,17 @@ function closeSidebar() {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function refreshDash() {
+  // Toggle custom row visibility + sync inputs
+  const cr = g('dash-custom-row');
+  if (cr) cr.style.display = (dashPeriod === 'custom') ? '' : 'none';
+  const cf = g('dash-from'); if (cf && cf.value !== dashFrom) cf.value = dashFrom;
+  const ct = g('dash-to'); if (ct && ct.value !== dashTo) ct.value = dashTo;
+
   // Header date
   const dateEl = g('dash-date');
   if (dateEl) {
-    const periodLabel = {today:'Hari Ini', week:'Minggu Ini', month:'Bulan Ini'}[dashPeriod] || '';
-    dateEl.textContent = periodLabel + ' · ' + new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+    const lbl = periodLabel(dashPeriod, dashFrom, dashTo);
+    dateEl.textContent = lbl + ' · ' + new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
   }
 
   const ords = _ordersInPeriod();
@@ -444,15 +483,9 @@ function refreshDash() {
 }
 
 function _ordersInPeriod() {
-  const today = todayISO();
-  const weekStart = getWeekStart();
-  const monthStart = getMonthStart();
   return orders.filter(o => {
     const d = isoToDate(o.isoDate) || o.date;
-    if (dashPeriod === 'today') return d === today;
-    if (dashPeriod === 'week') return d >= weekStart;
-    if (dashPeriod === 'month') return d >= monthStart;
-    return true;
+    return isInPeriod(d, dashPeriod, dashFrom, dashTo);
   });
 }
 
@@ -478,7 +511,7 @@ function _renderDashChart(ords) {
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = _localYMD(d);
     const label = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
     const rev = orders
       .filter(o => isoToDate(o.isoDate) === iso && o.payStatus === 'Lunas')
@@ -522,19 +555,28 @@ function setDashPeriod(p) {
   refreshDash();
 }
 
+function applyDashCustom() {
+  dashFrom = (g('dash-from')?.value || '').trim();
+  dashTo = (g('dash-to')?.value || '').trim();
+  if (dashFrom && dashTo && dashFrom > dashTo) { toast('Tanggal awal harus sebelum tanggal akhir', 'warn'); return; }
+  dashPeriod = 'custom';
+  document.querySelectorAll('.dtab-btn').forEach(b => b.classList.remove('on'));
+  const btn = g('dp-custom'); if (btn) btn.classList.add('on');
+  refreshDash();
+}
+
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
 function renderOrders() {
-  const today = todayISO();
-  const weekStart = getWeekStart();
-  const monthStart = getMonthStart();
+  // Toggle custom row + sync inputs
+  const cr = g('ord-custom-row');
+  if (cr) cr.style.display = (ordDateFilter === 'custom') ? '' : 'none';
+  const cf = g('ord-from'); if (cf && cf.value !== ordFrom) cf.value = ordFrom;
+  const ct = g('ord-to'); if (ct && ct.value !== ordTo) ct.value = ordTo;
 
   let filtered = orders.filter(o => {
     const d = isoToDate(o.isoDate) || '';
-    if (ordDateFilter === 'today') { if (d !== today) return false; }
-    else if (ordDateFilter === 'week') { if (d < weekStart) return false; }
-    else if (ordDateFilter === 'month') { if (d < monthStart) return false; }
-    return true;
+    return isInPeriod(d, ordDateFilter, ordFrom, ordTo);
   });
 
   const total = filtered.length;
@@ -588,6 +630,17 @@ function renderOrders() {
 }
 
 function ordGo(p) { ordPage = p; renderOrders(); }
+
+function applyOrdCustom() {
+  ordFrom = (g('ord-from')?.value || '').trim();
+  ordTo = (g('ord-to')?.value || '').trim();
+  if (ordFrom && ordTo && ordFrom > ordTo) { toast('Tanggal awal harus sebelum tanggal akhir', 'warn'); return; }
+  ordDateFilter = 'custom';
+  ordPage = 1;
+  document.querySelectorAll('.ord-date-btn').forEach(b => b.classList.remove('on'));
+  const btn = g('odf-custom'); if (btn) btn.classList.add('on');
+  renderOrders();
+}
 
 function setOrdDateFilter(v) {
   ordDateFilter = v;
@@ -1139,6 +1192,189 @@ function _promoBeliGratisLabel(p) {
     ? `${p.freeQty}x item ${menuCats.find(c => c.id === p.freeCatId)?.name || 'Kategori'}`
     : `${p.freeQty}x ${menuItems.find(m => m.id === p.freeItemId)?.name || '?'}`;
   return `Beli ${buyLabel} → Gratis ${freeLabel}`;
+}
+
+// ─── Laporan Produk Terjual ──────────────────────────────────────────────────
+
+function setRepPeriod(p) {
+  repPeriod = p;
+  document.querySelectorAll('#p-report .dtab-btn').forEach(b => b.classList.remove('on'));
+  const btn = g('rp-' + p); if (btn) btn.classList.add('on');
+  renderReport();
+}
+
+function applyRepCustom() {
+  repFrom = (g('rep-from')?.value || '').trim();
+  repTo = (g('rep-to')?.value || '').trim();
+  if (repFrom && repTo && repFrom > repTo) { toast('Tanggal awal harus sebelum tanggal akhir', 'warn'); return; }
+  repPeriod = 'custom';
+  document.querySelectorAll('#p-report .dtab-btn').forEach(b => b.classList.remove('on'));
+  const btn = g('rp-custom'); if (btn) btn.classList.add('on');
+  renderReport();
+}
+
+function _reportData() {
+  const ords = orders.filter(o => {
+    const d = isoToDate(o.isoDate) || o.date;
+    return isInPeriod(d, repPeriod, repFrom, repTo);
+  });
+
+  const byMenu = {};   // key = menu name (fallback if id missing) → { name, catId, qty, revenue }
+  const byCat = {};    // key = catId → { name, qty, revenue }
+  let totalItems = 0, totalRevenue = 0;
+
+  ords.forEach(o => {
+    (o.items || []).forEach(it => {
+      const qty = Number(it.qty) || 0;
+      const rev = Number(it.lineTotal) || 0;
+      totalItems += qty;
+      totalRevenue += rev;
+
+      // Resolve category from live menu (items are order-time snapshots without catId)
+      const menuRef = menuItems.find(m => m.id === it.id);
+      const catId = menuRef ? menuRef.catId : '_unknown';
+
+      const key = it.id || it.name;
+      if (!byMenu[key]) byMenu[key] = { name: it.name, catId, qty: 0, revenue: 0 };
+      byMenu[key].qty += qty;
+      byMenu[key].revenue += rev;
+
+      if (!byCat[catId]) {
+        const c = menuCats.find(x => x.id === catId);
+        byCat[catId] = { name: c ? c.name : 'Tanpa Kategori', qty: 0, revenue: 0 };
+      }
+      byCat[catId].qty += qty;
+      byCat[catId].revenue += rev;
+    });
+  });
+
+  return {
+    orders: ords,
+    orderCount: ords.length,
+    totalItems,
+    totalRevenue,
+    menus: Object.values(byMenu).sort((a, b) => b.qty - a.qty),
+    cats: Object.values(byCat).sort((a, b) => b.qty - a.qty)
+  };
+}
+
+function renderReport() {
+  // Toggle custom row + sync inputs
+  const cr = g('rep-custom-row');
+  if (cr) cr.style.display = (repPeriod === 'custom') ? '' : 'none';
+  const cf = g('rep-from'); if (cf && cf.value !== repFrom) cf.value = repFrom;
+  const ct = g('rep-to'); if (ct && ct.value !== repTo) ct.value = repTo;
+
+  const lbl = g('rep-period-label');
+  if (lbl) lbl.textContent = 'Periode: ' + periodLabel(repPeriod, repFrom, repTo);
+
+  const data = _reportData();
+
+  const se = (id, v) => { const el = g(id); if (el) el.textContent = v; };
+  se('rep-revenue', fmt(data.totalRevenue));
+  se('rep-orders', data.orderCount);
+  se('rep-items', data.totalItems);
+  se('rep-uniq', data.menus.length);
+
+  // Menu table
+  const menuEl = g('rep-menu-table');
+  if (menuEl) {
+    if (!data.menus.length) {
+      menuEl.innerHTML = '<div class="rep-empty">Belum ada penjualan pada periode ini</div>';
+    } else {
+      const rows = data.menus.map((m, i) => {
+        const catName = m.catId === '_unknown'
+          ? '—'
+          : (menuCats.find(c => c.id === m.catId)?.name || '—');
+        return `<tr>
+          <td class="rank">${i + 1}</td>
+          <td>${esc(m.name)}</td>
+          <td>${esc(catName)}</td>
+          <td class="num">${m.qty}</td>
+          <td class="num">${fmt(m.revenue)}</td>
+        </tr>`;
+      }).join('');
+      menuEl.innerHTML = `<table class="rep-tbl">
+        <thead><tr>
+          <th class="rank">#</th><th>Nama Menu</th><th>Kategori</th>
+          <th class="num">Qty</th><th class="num">Pendapatan</th>
+        </tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row"><td colspan="3">TOTAL</td>
+            <td class="num">${data.totalItems}</td>
+            <td class="num">${fmt(data.totalRevenue)}</td></tr>
+        </tbody>
+      </table>`;
+    }
+  }
+
+  // Category table
+  const catEl = g('rep-cat-table');
+  if (catEl) {
+    if (!data.cats.length) {
+      catEl.innerHTML = '<div class="rep-empty">Belum ada data</div>';
+    } else {
+      const rows = data.cats.map((c, i) =>
+        `<tr>
+          <td class="rank">${i + 1}</td>
+          <td>${esc(c.name)}</td>
+          <td class="num">${c.qty}</td>
+          <td class="num">${fmt(c.revenue)}</td>
+        </tr>`
+      ).join('');
+      catEl.innerHTML = `<table class="rep-tbl">
+        <thead><tr>
+          <th class="rank">#</th><th>Kategori</th>
+          <th class="num">Qty</th><th class="num">Pendapatan</th>
+        </tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row"><td colspan="2">TOTAL</td>
+            <td class="num">${data.totalItems}</td>
+            <td class="num">${fmt(data.totalRevenue)}</td></tr>
+        </tbody>
+      </table>`;
+    }
+  }
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function exportReportCSV(kind) {
+  const data = _reportData();
+  const rows = [];
+  const lbl = periodLabel(repPeriod, repFrom, repTo);
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  if (kind === 'menu') {
+    rows.push(['#', 'Nama Menu', 'Kategori', 'Qty', 'Pendapatan']);
+    data.menus.forEach((m, i) => {
+      const catName = m.catId === '_unknown' ? '—' : (menuCats.find(c => c.id === m.catId)?.name || '—');
+      rows.push([i + 1, m.name, catName, m.qty, m.revenue]);
+    });
+    rows.push(['', 'TOTAL', '', data.totalItems, data.totalRevenue]);
+  } else {
+    rows.push(['#', 'Kategori', 'Qty', 'Pendapatan']);
+    data.cats.forEach((c, i) => rows.push([i + 1, c.name, c.qty, c.revenue]));
+    rows.push(['', 'TOTAL', data.totalItems, data.totalRevenue]);
+  }
+
+  const csv = rows.map(r =>
+    r.map(v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',')
+  ).join('\n');
+
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `laporan-${kind}-${stamp}-${(lbl || '').replace(/\s+/g, '_')}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('CSV diunduh');
 }
 
 // ─── Menu Management ─────────────────────────────────────────────────────────
