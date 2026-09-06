@@ -32,16 +32,13 @@ let receiptLink = '';     // e-receipt / feedback link printed at bottom
 
 // UI State
 let curPage = 'dashboard';
-let dashPeriod = 'today';
-let dashFrom = '', dashTo = '';
-let ordDateFilter = 'today';
-let ordFrom = '', ordTo = '';
-let kasDateFilter = 'today';
+// Period state per page: { mode: 'day'|'week'|'month', offset: number }
+// offset = 0 → current, -1 → previous, +1 → next (future is disabled)
+let dashPS = { mode: 'day', offset: 0 };
+let ordPS = { mode: 'day', offset: 0 };
+let kasPS = { mode: 'day', offset: 0 };
+let repPS = { mode: 'day', offset: 0 };
 let ordPage = 1;
-
-// Report page
-let repPeriod = 'today';
-let repFrom = '', repTo = '';
 
 // Menu management tabs
 let menuTab = 'menu'; // 'menu' | 'cat'
@@ -145,30 +142,92 @@ function getMonthStart() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
-// Check whether a local YYYY-MM-DD date falls in the requested period.
-// `period` ∈ 'today' | 'week' | 'month' | 'custom' | 'all'.
-function isInPeriod(dateISO, period, customFrom, customTo) {
-  if (!dateISO) return false;
-  if (period === 'today') return dateISO === todayISO();
-  if (period === 'week') return dateISO >= getWeekStart();
-  if (period === 'month') return dateISO >= getMonthStart();
-  if (period === 'custom') {
-    if (customFrom && dateISO < customFrom) return false;
-    if (customTo && dateISO > customTo) return false;
-    return true;
+// Resolve a period state { mode, offset } into { from, to, label } (both dates
+// inclusive, YYYY-MM-DD in local time).
+function resolvePeriod(ps) {
+  const now = new Date();
+  const mode = ps.mode || 'day';
+  const off = ps.offset || 0;
+  let from, to, label;
+
+  if (mode === 'day') {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + off);
+    from = to = _localYMD(d);
+    if (off === 0) label = 'Hari Ini';
+    else if (off === -1) label = 'Kemarin';
+    else if (off < 0 && off >= -6) label = Math.abs(off) + ' hari lalu';
+    else label = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  } else if (mode === 'week') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + (off * 7));
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    from = _localYMD(start);
+    to = _localYMD(end);
+    if (off === 0) label = 'Minggu Ini';
+    else if (off === -1) label = 'Minggu Lalu';
+    else {
+      const s = start.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+      const e = end.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+      label = s + ' - ' + e;
+    }
+  } else {
+    // month
+    const start = new Date(now.getFullYear(), now.getMonth() + off, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + off + 1, 0);
+    from = _localYMD(start);
+    to = _localYMD(end);
+    if (off === 0) label = 'Bulan Ini';
+    else if (off === -1) label = 'Bulan Lalu';
+    else label = start.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
   }
-  return true; // 'all'
+  return { from, to, label };
 }
 
-function periodLabel(period, from, to) {
-  const map = { today: 'Hari Ini', week: 'Minggu Ini', month: 'Bulan Ini', all: 'Semua' };
-  if (period === 'custom') {
-    if (from && to) return from + ' → ' + to;
-    if (from) return 'Sejak ' + from;
-    if (to) return 'Sampai ' + to;
-    return 'Custom (pilih tanggal)';
-  }
-  return map[period] || '';
+function matchesPeriod(dateISO, ps) {
+  if (!dateISO) return false;
+  const { from, to } = resolvePeriod(ps);
+  return dateISO >= from && dateISO <= to;
+}
+
+// Render segmented mode picker + prev/next navigator into `containerId`.
+// `onChange` is called after any state mutation.
+function renderPeriodNav(containerId, ps, onChange) {
+  const el = g(containerId);
+  if (!el) return;
+  const { label } = resolvePeriod(ps);
+  const modes = [['day', 'Harian'], ['week', 'Mingguan'], ['month', 'Bulanan']];
+  const canForward = (ps.offset || 0) < 0;
+
+  el.innerHTML = `
+    <div class="pnav">
+      <div class="pnav-seg">
+        ${modes.map(([v, l]) =>
+          `<button type="button" class="pnav-seg-btn ${ps.mode === v ? 'on' : ''}" data-mode="${v}">${l}</button>`
+        ).join('')}
+      </div>
+      <div class="pnav-nav">
+        <button type="button" class="pnav-arrow" data-dir="-1" aria-label="Sebelumnya">&#x2039;</button>
+        <div class="pnav-label">${esc(label)}</div>
+        <button type="button" class="pnav-arrow" data-dir="1" ${canForward ? '' : 'disabled'} aria-label="Berikutnya">&#x203A;</button>
+      </div>
+    </div>
+  `;
+  el.querySelectorAll('.pnav-seg-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      if (ps.mode === b.dataset.mode) return;
+      ps.mode = b.dataset.mode;
+      ps.offset = 0;
+      onChange();
+    });
+  });
+  el.querySelectorAll('.pnav-arrow').forEach(b => {
+    b.addEventListener('click', () => {
+      if (b.disabled) return;
+      const dir = Number(b.dataset.dir);
+      if (dir > 0 && (ps.offset || 0) >= 0) return;
+      ps.offset = (ps.offset || 0) + dir;
+      onChange();
+    });
+  });
 }
 
 // ─── Seed Data ───────────────────────────────────────────────────────────────
@@ -442,16 +501,12 @@ function closeSidebar() {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function refreshDash() {
-  // Toggle custom row visibility + sync inputs
-  const cr = g('dash-custom-row');
-  if (cr) cr.style.display = (dashPeriod === 'custom') ? '' : 'none';
-  const cf = g('dash-from'); if (cf && cf.value !== dashFrom) cf.value = dashFrom;
-  const ct = g('dash-to'); if (ct && ct.value !== dashTo) ct.value = dashTo;
+  renderPeriodNav('dash-period-nav', dashPS, refreshDash);
 
   // Header date
   const dateEl = g('dash-date');
   if (dateEl) {
-    const lbl = periodLabel(dashPeriod, dashFrom, dashTo);
+    const lbl = resolvePeriod(dashPS).label;
     dateEl.textContent = lbl + ' · ' + new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
   }
 
@@ -483,10 +538,7 @@ function refreshDash() {
 }
 
 function _ordersInPeriod() {
-  return orders.filter(o => {
-    const d = isoToDate(o.isoDate) || o.date;
-    return isInPeriod(d, dashPeriod, dashFrom, dashTo);
-  });
+  return orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || o.date, dashPS));
 }
 
 function _topItems(ords) {
@@ -547,37 +599,13 @@ function _renderDashChart(ords) {
   });
 }
 
-function setDashPeriod(p) {
-  dashPeriod = p;
-  document.querySelectorAll('.dtab-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('dp-' + p);
-  if (btn) btn.classList.add('on');
-  refreshDash();
-}
-
-function applyDashCustom() {
-  dashFrom = (g('dash-from')?.value || '').trim();
-  dashTo = (g('dash-to')?.value || '').trim();
-  if (dashFrom && dashTo && dashFrom > dashTo) { toast('Tanggal awal harus sebelum tanggal akhir', 'warn'); return; }
-  dashPeriod = 'custom';
-  document.querySelectorAll('.dtab-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('dp-custom'); if (btn) btn.classList.add('on');
-  refreshDash();
-}
 
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
 function renderOrders() {
-  // Toggle custom row + sync inputs
-  const cr = g('ord-custom-row');
-  if (cr) cr.style.display = (ordDateFilter === 'custom') ? '' : 'none';
-  const cf = g('ord-from'); if (cf && cf.value !== ordFrom) cf.value = ordFrom;
-  const ct = g('ord-to'); if (ct && ct.value !== ordTo) ct.value = ordTo;
+  renderPeriodNav('ord-period-nav', ordPS, () => { ordPage = 1; renderOrders(); });
 
-  let filtered = orders.filter(o => {
-    const d = isoToDate(o.isoDate) || '';
-    return isInPeriod(d, ordDateFilter, ordFrom, ordTo);
-  });
+  let filtered = orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || '', ordPS));
 
   const total = filtered.length;
   const pages = Math.ceil(total / 15) || 1;
@@ -630,26 +658,6 @@ function renderOrders() {
 }
 
 function ordGo(p) { ordPage = p; renderOrders(); }
-
-function applyOrdCustom() {
-  ordFrom = (g('ord-from')?.value || '').trim();
-  ordTo = (g('ord-to')?.value || '').trim();
-  if (ordFrom && ordTo && ordFrom > ordTo) { toast('Tanggal awal harus sebelum tanggal akhir', 'warn'); return; }
-  ordDateFilter = 'custom';
-  ordPage = 1;
-  document.querySelectorAll('.ord-date-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('odf-custom'); if (btn) btn.classList.add('on');
-  renderOrders();
-}
-
-function setOrdDateFilter(v) {
-  ordDateFilter = v;
-  ordPage = 1;
-  document.querySelectorAll('.ord-date-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('odf-' + v);
-  if (btn) btn.classList.add('on');
-  renderOrders();
-}
 
 function openOrderDetail(id) {
   const o = orders.find(x => x.id === id);
@@ -753,17 +761,9 @@ function setOrderPayStatus(id, ps) {
 // ─── Kas ──────────────────────────────────────────────────────────────────────
 
 function renderKas() {
-  const today = todayISO();
-  const weekStart = getWeekStart();
-  const monthStart = getMonthStart();
+  renderPeriodNav('kas-period-nav', kasPS, renderKas);
 
-  let filtered = kasLog.filter(l => {
-    const d = l.date || '';
-    if (kasDateFilter === 'today') return d === today;
-    if (kasDateFilter === 'week') return d >= weekStart;
-    if (kasDateFilter === 'month') return d >= monthStart;
-    return true;
-  });
+  let filtered = kasLog.filter(l => matchesPeriod(l.date || '', kasPS));
 
   const totalIn = filtered.filter(l => l.type === 'in').reduce((s, l) => s + (l.amount || 0), 0);
   const totalOut = filtered.filter(l => l.type === 'out').reduce((s, l) => s + (l.amount || 0), 0);
@@ -814,14 +814,6 @@ function renderKas() {
       </div>
     `;
   }).join('');
-}
-
-function setKasDateFilter(v) {
-  kasDateFilter = v;
-  document.querySelectorAll('.kas-date-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('kdf-' + v);
-  if (btn) btn.classList.add('on');
-  renderKas();
 }
 
 function openKasTambah(type) {
@@ -1196,28 +1188,8 @@ function _promoBeliGratisLabel(p) {
 
 // ─── Laporan Produk Terjual ──────────────────────────────────────────────────
 
-function setRepPeriod(p) {
-  repPeriod = p;
-  document.querySelectorAll('#p-report .dtab-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('rp-' + p); if (btn) btn.classList.add('on');
-  renderReport();
-}
-
-function applyRepCustom() {
-  repFrom = (g('rep-from')?.value || '').trim();
-  repTo = (g('rep-to')?.value || '').trim();
-  if (repFrom && repTo && repFrom > repTo) { toast('Tanggal awal harus sebelum tanggal akhir', 'warn'); return; }
-  repPeriod = 'custom';
-  document.querySelectorAll('#p-report .dtab-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('rp-custom'); if (btn) btn.classList.add('on');
-  renderReport();
-}
-
 function _reportData() {
-  const ords = orders.filter(o => {
-    const d = isoToDate(o.isoDate) || o.date;
-    return isInPeriod(d, repPeriod, repFrom, repTo);
-  });
+  const ords = orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || o.date, repPS));
 
   const byMenu = {};   // key = menu name (fallback if id missing) → { name, catId, qty, revenue }
   const byCat = {};    // key = catId → { name, qty, revenue }
@@ -1259,14 +1231,10 @@ function _reportData() {
 }
 
 function renderReport() {
-  // Toggle custom row + sync inputs
-  const cr = g('rep-custom-row');
-  if (cr) cr.style.display = (repPeriod === 'custom') ? '' : 'none';
-  const cf = g('rep-from'); if (cf && cf.value !== repFrom) cf.value = repFrom;
-  const ct = g('rep-to'); if (ct && ct.value !== repTo) ct.value = repTo;
+  renderPeriodNav('rep-period-nav', repPS, renderReport);
 
   const lbl = g('rep-period-label');
-  if (lbl) lbl.textContent = 'Periode: ' + periodLabel(repPeriod, repFrom, repTo);
+  if (lbl) lbl.textContent = 'Periode: ' + resolvePeriod(repPS).label;
 
   const data = _reportData();
 
@@ -1344,8 +1312,8 @@ function renderReport() {
 function exportReportCSV(kind) {
   const data = _reportData();
   const rows = [];
-  const lbl = periodLabel(repPeriod, repFrom, repTo);
-  const stamp = new Date().toISOString().slice(0, 10);
+  const lbl = resolvePeriod(repPS).label;
+  const stamp = _localYMD(new Date());
 
   if (kind === 'menu') {
     rows.push(['#', 'Nama Menu', 'Kategori', 'Qty', 'Pendapatan']);

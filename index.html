@@ -324,6 +324,22 @@
     }
     .menu-tab-btn.on { color: var(--p); border-bottom-color: var(--p); }
     .menu-tab-btn:hover:not(.on) { color: var(--t1); }
+    /* ── Period navigator (Harian/Mingguan/Bulanan + prev/next) ── */
+    .pnav { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .pnav-seg { display:inline-flex; padding:3px; background:var(--bg); border-radius:10px; border:1px solid var(--b1); }
+    .pnav-seg-btn { padding:6px 16px; font-size:12px; font-weight:600; color:var(--t2); background:transparent; border:none; border-radius:7px; cursor:pointer; transition:.15s; font-family:inherit; white-space:nowrap; }
+    .pnav-seg-btn:hover:not(.on) { color:var(--p); }
+    .pnav-seg-btn.on { background:var(--p); color:#fff; }
+    .pnav-nav { display:inline-flex; align-items:center; border:1px solid var(--b1); border-radius:10px; background:var(--ca); overflow:hidden; }
+    .pnav-arrow { background:transparent; border:none; padding:6px 12px; font-size:18px; color:var(--t2); cursor:pointer; font-weight:700; line-height:1; font-family:inherit; }
+    .pnav-arrow:hover:not(:disabled) { color:var(--p); background:var(--pl); }
+    .pnav-arrow:disabled { color:var(--t3); cursor:not-allowed; opacity:.5; }
+    .pnav-label { padding:6px 14px; font-size:13px; font-weight:600; color:var(--t1); min-width:130px; text-align:center; border-left:1px solid var(--b1); border-right:1px solid var(--b1); white-space:nowrap; }
+    @media (max-width:640px) {
+      .pnav-label { min-width:100px; font-size:12px; padding:6px 10px; }
+      .pnav-seg-btn { padding:6px 12px; }
+    }
+
     /* ── Report tables ─────────────────────────────────────────── */
     .rep-tbl { width:100%; border-collapse:collapse; font-size:13px; }
     .rep-tbl th, .rep-tbl td { padding:10px 14px; text-align:left; border-bottom:1px solid var(--b1); }
@@ -818,19 +834,8 @@
       </div>
 
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
-        <!-- Period tabs -->
         <div style="padding:12px 16px;border-bottom:1px solid var(--b1)">
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="dtab-btn on" id="dp-today" onclick="setDashPeriod('today')">Hari Ini</button>
-            <button class="dtab-btn" id="dp-week" onclick="setDashPeriod('week')">Minggu Ini</button>
-            <button class="dtab-btn" id="dp-month" onclick="setDashPeriod('month')">Bulan Ini</button>
-            <button class="dtab-btn" id="dp-custom" onclick="setDashPeriod('custom')">Custom</button>
-          </div>
-          <div id="dash-custom-row" style="display:none;margin-top:10px;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px">
-            <label style="display:flex;align-items:center;gap:4px">Dari <input type="date" id="dash-from" class="form-input" style="padding:4px 8px;font-size:12px;width:auto"></label>
-            <label style="display:flex;align-items:center;gap:4px">Sampai <input type="date" id="dash-to" class="form-input" style="padding:4px 8px;font-size:12px;width:auto"></label>
-            <button class="btn btn-p btn-sm" onclick="applyDashCustom()">Terapkan</button>
-          </div>
+          <div id="dash-period-nav"></div>
         </div>
         <!-- Stats grid: Total | Pesanan | Tunai | Non-Tunai -->
         <div class="dash-stats">
@@ -935,18 +940,7 @@
         </div>
       </div>
 
-      <div class="orders-filter-bar">
-        <button class="ord-date-btn filter-btn on" id="odf-today" onclick="setOrdDateFilter('today')">Hari Ini</button>
-        <button class="ord-date-btn filter-btn" id="odf-week" onclick="setOrdDateFilter('week')">Minggu Ini</button>
-        <button class="ord-date-btn filter-btn" id="odf-month" onclick="setOrdDateFilter('month')">Bulan Ini</button>
-        <button class="ord-date-btn filter-btn" id="odf-custom" onclick="setOrdDateFilter('custom')">Custom</button>
-        <button class="ord-date-btn filter-btn" id="odf-all" onclick="setOrdDateFilter('all')">Semua</button>
-      </div>
-      <div id="ord-custom-row" style="display:none;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0 12px;font-size:12px">
-        <label style="display:flex;align-items:center;gap:4px">Dari <input type="date" id="ord-from" class="form-input" style="padding:4px 8px;font-size:12px;width:auto"></label>
-        <label style="display:flex;align-items:center;gap:4px">Sampai <input type="date" id="ord-to" class="form-input" style="padding:4px 8px;font-size:12px;width:auto"></label>
-        <button class="btn btn-p btn-sm" onclick="applyOrdCustom()">Terapkan</button>
-      </div>
+      <div id="ord-period-nav" style="margin-bottom:12px"></div>
 
       <div class="orders-summary" id="orders-summary"></div>
       <div id="orders-list"></div>
@@ -982,12 +976,7 @@
         </div>
       </div>
 
-      <div class="filter-row" style="margin-bottom:16px">
-        <button class="filter-btn kas-date-btn on" id="kdf-today" onclick="setKasDateFilter('today')">Hari Ini</button>
-        <button class="filter-btn kas-date-btn" id="kdf-week" onclick="setKasDateFilter('week')">Minggu Ini</button>
-        <button class="filter-btn kas-date-btn" id="kdf-month" onclick="setKasDateFilter('month')">Bulan Ini</button>
-        <button class="filter-btn kas-date-btn" id="kdf-all" onclick="setKasDateFilter('all')">Semua</button>
-      </div>
+      <div id="kas-period-nav" style="margin-bottom:16px"></div>
 
       <div class="card">
         <div id="kas-list"></div>
@@ -1004,18 +993,7 @@
       </div>
 
       <div class="card" style="padding:12px 16px;margin-bottom:12px">
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="dtab-btn on" id="rp-today" onclick="setRepPeriod('today')">Hari Ini</button>
-          <button class="dtab-btn" id="rp-week" onclick="setRepPeriod('week')">Minggu Ini</button>
-          <button class="dtab-btn" id="rp-month" onclick="setRepPeriod('month')">Bulan Ini</button>
-          <button class="dtab-btn" id="rp-custom" onclick="setRepPeriod('custom')">Custom</button>
-          <button class="dtab-btn" id="rp-all" onclick="setRepPeriod('all')">Semua</button>
-        </div>
-        <div id="rep-custom-row" style="display:none;margin-top:10px;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px">
-          <label style="display:flex;align-items:center;gap:4px">Dari <input type="date" id="rep-from" class="form-input" style="padding:4px 8px;font-size:12px;width:auto"></label>
-          <label style="display:flex;align-items:center;gap:4px">Sampai <input type="date" id="rep-to" class="form-input" style="padding:4px 8px;font-size:12px;width:auto"></label>
-          <button class="btn btn-p btn-sm" onclick="applyRepCustom()">Terapkan</button>
-        </div>
+        <div id="rep-period-nav"></div>
       </div>
 
       <div class="dash-stats" style="margin-bottom:12px">
