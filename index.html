@@ -2,8 +2,20 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
   <title>KasirHnY</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2563EB">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="KasirHnY">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="KasirHnY">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -249,19 +261,41 @@
     .ord-sep { width: 1px; height: 22px; background: var(--b1); flex-shrink: 0; }
     .orders-summary { font-size: 12px; color: var(--t2); margin-bottom: 12px; }
     .order-card {
+      display: grid;
+      grid-template-columns: 140px 1fr 90px 80px minmax(110px, auto);
+      gap: 12px;
+      align-items: center;
       background: var(--ca); border: 1.5px solid var(--b1); border-radius: var(--r);
-      padding: 14px 16px; margin-bottom: 10px; cursor: pointer; transition: .15s;
+      padding: 10px 14px; margin-bottom: 8px; cursor: pointer; transition: .15s;
       box-shadow: var(--sh);
     }
     .order-card:hover { border-color: var(--p); box-shadow: 0 0 0 3px var(--p20); }
-    .order-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-    .order-id { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--t1); }
-    .order-card-body { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-    .order-meta { font-size: 12px; color: var(--t2); }
-    .order-total { font-size: 15px; font-weight: 700; color: var(--p); }
-    .order-card-footer { display: flex; align-items: center; justify-content: space-between; }
-    .order-pay-method { font-size: 12px; color: var(--t2); }
+    .oc-id { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .oc-date { font-size: 12px; color: var(--t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .oc-pay { font-size: 12px; color: var(--t2); white-space: nowrap; }
+    .oc-status { justify-self: start; }
+    .oc-total { font-size: 15px; font-weight: 700; color: var(--p); text-align: right; white-space: nowrap; }
+    .oc-meta-mob { display: none; }
     .pg-info { font-size: 12px; color: var(--t2); }
+
+    @media (max-width: 720px) {
+      .order-card {
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto;
+        row-gap: 4px;
+        padding: 10px 12px;
+      }
+      .oc-id { grid-column: 1; grid-row: 1; font-size: 12.5px; }
+      .oc-total { grid-column: 2; grid-row: 1; font-size: 14px; }
+      .oc-meta-mob {
+        grid-column: 1 / -1; grid-row: 2;
+        display: flex !important; align-items: center; gap: 8px;
+        font-size: 11px; color: var(--t2); flex-wrap: wrap;
+      }
+      .oc-meta-mob .badge { font-size: 10px; padding: 1px 7px; }
+      /* Hide the desktop-only columns; contents shown in .oc-meta-mob */
+      .oc-date, .oc-pay, .oc-status { display: none; }
+    }
 
     /* ── Badges ─────────────────────────────────────────────────── */
     .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
@@ -312,6 +346,37 @@
     }
     .menu-tab-btn.on { color: var(--p); border-bottom-color: var(--p); }
     .menu-tab-btn:hover:not(.on) { color: var(--t1); }
+    /* ── Period navigator (Harian/Mingguan/Bulanan + prev/next) ── */
+    .pnav { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .pnav-seg { display:inline-flex; padding:3px; background:var(--bg); border-radius:10px; border:1px solid var(--b1); }
+    .pnav-seg-btn { padding:6px 16px; font-size:12px; font-weight:600; color:var(--t2); background:transparent; border:none; border-radius:7px; cursor:pointer; transition:.15s; font-family:inherit; white-space:nowrap; }
+    .pnav-seg-btn:hover:not(.on) { color:var(--p); }
+    .pnav-seg-btn.on { background:var(--p); color:#fff; }
+    .pnav-nav { display:inline-flex; align-items:center; border:1px solid var(--b1); border-radius:10px; background:var(--ca); overflow:hidden; }
+    .pnav-arrow { background:transparent; border:none; padding:6px 12px; font-size:18px; color:var(--t2); cursor:pointer; font-weight:700; line-height:1; font-family:inherit; }
+    .pnav-arrow:hover:not(:disabled) { color:var(--p); background:var(--pl); }
+    .pnav-arrow:disabled { color:var(--t3); cursor:not-allowed; opacity:.5; }
+    .pnav-label { padding:6px 14px; font-size:13px; font-weight:600; color:var(--t1); min-width:130px; text-align:center; border-left:1px solid var(--b1); border-right:1px solid var(--b1); white-space:nowrap; }
+    @media (max-width:640px) {
+      .pnav-label { min-width:100px; font-size:12px; padding:6px 10px; }
+      .pnav-seg-btn { padding:6px 12px; }
+    }
+
+    /* ── Report tables ─────────────────────────────────────────── */
+    .rep-tbl { width:100%; border-collapse:collapse; font-size:13px; }
+    .rep-tbl th, .rep-tbl td { padding:10px 14px; text-align:left; border-bottom:1px solid var(--b1); }
+    .rep-tbl th { background:var(--bg); color:var(--t2); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+    .rep-tbl tr:last-child td { border-bottom:none; }
+    .rep-tbl td.num, .rep-tbl th.num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .rep-tbl .rank { color:var(--t3); width:32px; }
+    .rep-tbl tr.total-row td { font-weight:700; background:var(--pl); border-top:2px solid var(--b1); }
+    .rep-empty { padding:40px 20px; text-align:center; color:var(--t2); font-size:13px; }
+    .rep-tbl th.sortable { cursor:pointer; user-select:none; }
+    .rep-tbl th.sortable:hover { color:var(--p); }
+    .rep-tbl th .sort-ind { display:inline-block; margin-left:4px; font-size:9px; opacity:.4; }
+    .rep-tbl th.sort-on { color:var(--p); }
+    .rep-tbl th.sort-on .sort-ind { opacity:1; }
+
     .list-item {
       display: flex; align-items: center; gap: 12px;
       padding: 12px 0; border-bottom: 1px solid var(--b1);
@@ -754,6 +819,10 @@
         <i data-lucide="wallet"></i>
         <span class="ni-label">Kas Kasir</span>
       </div>
+      <div class="ni" data-page="report" onclick="goPage('report',this)">
+        <i data-lucide="bar-chart-3"></i>
+        <span class="ni-label">Laporan</span>
+      </div>
       <div class="ni" data-page="menu" onclick="goPage('menu',this)">
         <i data-lucide="utensils"></i>
         <span class="ni-label">Menu</span>
@@ -792,13 +861,8 @@
       </div>
 
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
-        <!-- Period tabs -->
         <div style="padding:12px 16px;border-bottom:1px solid var(--b1)">
-          <div style="display:flex;gap:6px">
-            <button class="dtab-btn on" id="dp-today" onclick="setDashPeriod('today')">Hari Ini</button>
-            <button class="dtab-btn" id="dp-week" onclick="setDashPeriod('week')">Minggu Ini</button>
-            <button class="dtab-btn" id="dp-month" onclick="setDashPeriod('month')">Bulan Ini</button>
-          </div>
+          <div id="dash-period-nav"></div>
         </div>
         <!-- Stats grid: Total | Pesanan | Tunai | Non-Tunai -->
         <div class="dash-stats">
@@ -836,10 +900,15 @@
     <div class="page" id="p-pos">
       <div class="pos-mobile-header">
         <span class="pos-mobile-title">Kasir</span>
-        <button class="pos-cart-toggle" onclick="toggleMobileCart()">
-          Keranjang
-          <span id="cart-mobile-badge"></span>
-        </button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="icon-btn" onclick="openPrinterModal()" title="Pengaturan Printer">
+            <i data-lucide="printer"></i>
+          </button>
+          <button class="pos-cart-toggle" onclick="toggleMobileCart()">
+            Keranjang
+            <span id="cart-mobile-badge"></span>
+          </button>
+        </div>
       </div>
       <div class="pos-split">
         <!-- Menu Panel -->
@@ -847,6 +916,10 @@
           <div style="padding:12px 0 0">
             <div class="pos-search-row">
               <input type="search" class="pos-search" placeholder="Cari menu..." oninput="onPOSSearch(this.value)">
+              <button class="btn btn-sec btn-sm" onclick="openPrinterModal()" title="Pengaturan Printer" style="white-space:nowrap;display:inline-flex;align-items:center;gap:6px">
+                <i data-lucide="printer" style="width:16px;height:16px"></i>
+                <span>Printer</span>
+              </button>
             </div>
             <div id="pos-cat-filter"></div>
             <div class="menu-grid" id="pos-menu-grid"></div>
@@ -861,11 +934,6 @@
           </div>
           <div id="pos-cart-inner"></div>
           <div id="cart-footer" style="display:none">
-            <div class="cart-inputs">
-              <input type="text" class="cart-input" id="pos-cust-name" placeholder="Nama pelanggan (opsional)" oninput="onPOSCustName(this.value)">
-              <input type="text" class="cart-input" id="pos-table-no" placeholder="Nomor meja (opsional)" oninput="onPOSTableNo(this.value)">
-              <input type="text" class="cart-input" id="pos-notes" placeholder="Catatan (opsional)" oninput="onPOSNotes(this.value)">
-            </div>
             <div class="cart-footer-totals">
               <div class="cart-total-row">
                 <span>Subtotal</span>
@@ -899,17 +967,7 @@
         </div>
       </div>
 
-      <div class="orders-filter-bar">
-        <button class="ord-date-btn filter-btn on" id="odf-today" onclick="setOrdDateFilter('today')">Hari Ini</button>
-        <button class="ord-date-btn filter-btn" id="odf-week" onclick="setOrdDateFilter('week')">Minggu Ini</button>
-        <button class="ord-date-btn filter-btn" id="odf-month" onclick="setOrdDateFilter('month')">Bulan Ini</button>
-        <button class="ord-date-btn filter-btn" id="odf-all" onclick="setOrdDateFilter('all')">Semua</button>
-        <div class="ord-sep"></div>
-        <button class="ord-filter-btn" data-type="status" data-val="Baru" onclick="setOrdFilter('status','Baru')">Baru</button>
-        <button class="ord-filter-btn" data-type="status" data-val="Selesai" onclick="setOrdFilter('status','Selesai')">Selesai</button>
-        <div class="ord-sep"></div>
-        <button class="ord-filter-btn" data-type="pay" data-val="Lunas" onclick="setOrdFilter('pay','Lunas')">Lunas</button>
-        </div>
+      <div id="ord-period-nav" style="margin-bottom:12px"></div>
 
       <div class="orders-summary" id="orders-summary"></div>
       <div id="orders-list"></div>
@@ -945,15 +1003,45 @@
         </div>
       </div>
 
-      <div class="filter-row" style="margin-bottom:16px">
-        <button class="filter-btn kas-date-btn on" id="kdf-today" onclick="setKasDateFilter('today')">Hari Ini</button>
-        <button class="filter-btn kas-date-btn" id="kdf-week" onclick="setKasDateFilter('week')">Minggu Ini</button>
-        <button class="filter-btn kas-date-btn" id="kdf-month" onclick="setKasDateFilter('month')">Bulan Ini</button>
-        <button class="filter-btn kas-date-btn" id="kdf-all" onclick="setKasDateFilter('all')">Semua</button>
-      </div>
+      <div id="kas-period-nav" style="margin-bottom:16px"></div>
 
       <div class="card">
         <div id="kas-list"></div>
+      </div>
+    </div>
+
+    <!-- ─── Laporan Produk Terjual ─────────────────────────── -->
+    <div class="page" id="p-report">
+      <div class="ph">
+        <div>
+          <div class="ph-title">Laporan Produk Terjual</div>
+          <div id="rep-period-label" style="font-size:12px;color:var(--t2);margin-top:2px"></div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:12px 16px;margin-bottom:12px">
+        <div id="rep-period-nav"></div>
+      </div>
+
+      <div class="card" style="padding:0;margin-bottom:12px">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700;font-size:14px">Rekap per Kategori</div>
+          <button class="btn btn-sec btn-sm" onclick="exportReportCSV('cat')">
+            <i data-lucide="download" style="width:14px;height:14px"></i> Export CSV
+          </button>
+        </div>
+        <div id="rep-cat-table"></div>
+      </div>
+
+      <div class="card" style="padding:0">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700;font-size:14px">Rekap per Menu</div>
+          <button class="btn btn-sec btn-sm" onclick="exportReportCSV('menu')">
+            <i data-lucide="download" style="width:14px;height:14px"></i> Export CSV
+          </button>
+        </div>
+        <div id="rep-menu-table"></div>
+        <div class="pagination" id="rep-menu-pagination" style="padding:10px 16px 14px"></div>
       </div>
     </div>
 
@@ -1025,7 +1113,7 @@
             <input type="text" id="set-store-name" class="form-input" placeholder="Nama toko">
           </div>
           <div class="form-group">
-            <label class="form-label">Nomor WhatsApp</label>
+            <label class="form-label">Nomor WhatsApp / Telp</label>
             <input type="text" id="set-store-wa" class="form-input" placeholder="08xxx">
           </div>
         </div>
@@ -1034,6 +1122,50 @@
           <input type="text" id="set-store-addr" class="form-input" placeholder="Alamat toko">
         </div>
         <button class="btn btn-p btn-sm" onclick="saveStoreInfo()">Simpan Informasi</button>
+      </div>
+
+      <!-- Struk / Printer -->
+      <div class="settings-section">
+        <div class="settings-section-title">Struk &amp; Printer</div>
+
+        <div class="form-group">
+          <label class="form-label">Logo Struk</label>
+          <div id="logo-preview" style="display:flex;align-items:center;gap:8px;margin-bottom:8px"></div>
+          <input type="file" id="set-logo-file" accept="image/*" class="form-input"
+                 style="padding:6px;font-size:12px" onchange="onLogoFilePicked(this)">
+          <div style="font-size:11px;color:var(--t2);margin-top:4px">
+            Format apapun (PNG/JPG). Otomatis dikonversi ke hitam-putih untuk printer thermal.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Ukuran Kertas Printer</label>
+          <div style="display:flex;gap:16px;padding:4px 0">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="radio" name="printer-width" value="55"> 55 mm
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="radio" name="printer-width" value="80"> 80 mm
+            </label>
+          </div>
+          <div style="font-size:11px;color:var(--t2)">
+            Layout struk menyesuaikan lebar agar teks tidak terpotong.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Teks Footer Struk</label>
+          <input type="text" id="set-store-footer" class="form-input"
+                 placeholder="Terima kasih telah berkunjung!">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Link Kritik &amp; Saran (opsional)</label>
+          <input type="text" id="set-receipt-link" class="form-input"
+                 placeholder="https://...">
+        </div>
+
+        <button class="btn btn-p btn-sm" onclick="saveStoreInfo()">Simpan Pengaturan Struk</button>
       </div>
 
       <!-- Change Password -->
@@ -1380,6 +1512,67 @@
   </div>
 </div>
 
+<!-- Printer Settings Modal -->
+<div class="mbg" id="m-printer" style="display:none" onclick="if(event.target===this)closeModal('m-printer')">
+  <div class="mbox">
+    <div class="mhead">
+      <span class="mhead-title">Pengaturan Printer</span>
+      <button class="mclose" onclick="closeModal('m-printer')">&#x2715;</button>
+    </div>
+    <div class="mbody">
+      <div class="form-group">
+        <label class="form-label">Status Koneksi</label>
+        <div id="printer-status" style="padding:10px 12px;border:1px solid var(--b2);border-radius:6px;font-size:13px;background:var(--bg)">
+          Memuat...
+        </div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <button class="btn btn-p btn-sm" onclick="btConnectPrinter()">
+          <i data-lucide="bluetooth" style="width:15px;height:15px"></i> Sambungkan / Ganti
+        </button>
+        <button class="btn btn-sec btn-sm" onclick="btForgetPrinter()">
+          <i data-lucide="x" style="width:15px;height:15px"></i> Lupakan Printer
+        </button>
+        <button class="btn btn-sec btn-sm" onclick="btTestPrint()">
+          <i data-lucide="printer" style="width:15px;height:15px"></i> Test Cetak
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Ukuran Kertas Printer</label>
+        <div style="display:flex;gap:16px;padding:4px 0">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="printer-width-pos" value="55" onchange="savePrinterWidthQuick(this.value)"> 55 mm
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="printer-width-pos" value="80" onchange="savePrinterWidthQuick(this.value)"> 80 mm
+          </label>
+        </div>
+        <div style="font-size:11px;color:var(--t2)">
+          Layout struk akan otomatis menyesuaikan.
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--t2);margin-top:10px;padding:10px;background:var(--bg);border-radius:6px;line-height:1.5">
+        <b>Tips Android:</b><br>
+        &bull; Pair printer dulu di <b>Setelan Bluetooth Android</b>, baru sambungkan di sini.<br>
+        &bull; Setelah pertama kali sambung, printer akan otomatis reconnect &mdash; tidak perlu memilih ulang setiap cetak.<br>
+        &bull; Install sebagai aplikasi (PWA) untuk pengalaman terbaik: buka lebih cepat, bisa offline, ikon di home screen.<br>
+        &bull; Bluetooth Web hanya jalan di <b>Chrome Android</b> / Edge (bukan Firefox / iOS Safari).
+      </div>
+
+      <button id="btn-install-pwa" class="btn btn-p btn-sm" style="display:none;margin-top:10px;width:100%"
+              onclick="promptInstallPWA()">
+        <i data-lucide="download" style="width:15px;height:15px"></i> Install Aplikasi KasirHnY
+      </button>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-sec" onclick="closeModal('m-printer')">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast Container -->
 <div id="toast-wrap" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none"></div>
 
@@ -1439,6 +1632,67 @@
       showCodeScreen();
     }
   });
+
+  // ─── PWA: Service Worker + Install Prompt ────────────────────────────
+  window.deferredInstallPrompt = null;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    window.deferredInstallPrompt = e;
+    if (typeof _showInstallCTA === 'function') _showInstallCTA(true);
+  });
+
+  window.addEventListener('appinstalled', () => {
+    window.deferredInstallPrompt = null;
+    if (typeof _showInstallCTA === 'function') _showInstallCTA(false);
+    if (typeof toast === 'function') toast('KasirHnY berhasil diinstall!');
+  });
+
+  function _showInstallCTA(show) {
+    const btn = document.getElementById('btn-install-pwa');
+    if (btn) btn.style.display = show ? '' : 'none';
+  }
+
+  async function promptInstallPWA() {
+    const p = window.deferredInstallPrompt;
+    if (!p) {
+      if (typeof toast === 'function')
+        toast('Install belum tersedia. Buka di Chrome Android → menu → "Install aplikasi".', 'warn');
+      return;
+    }
+    p.prompt();
+    try { await p.userChoice; } catch (e) {}
+    window.deferredInstallPrompt = null;
+    _showInstallCTA(false);
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js', { scope: './' })
+        .then(reg => {
+          // Poll for updates every hour
+          setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+          reg.addEventListener('updatefound', () => {
+            const nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener('statechange', () => {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                // Auto-apply new version on next navigation
+                nw.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+        })
+        .catch(err => console.warn('[sw] register failed', err));
+
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloading) return;
+        reloading = true;
+        window.location.reload();
+      });
+    });
+  }
 </script>
 </body>
 </html>

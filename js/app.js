@@ -25,14 +25,21 @@ let storeName = 'KasirHnY';
 let storeAddr = '';
 let storeWa = '';
 let storeFooter = 'Terima kasih telah berkunjung!';
+let storeLogo = '';       // original uploaded image (data URL)
+let storeLogoBW = '';     // auto-converted black & white PNG (data URL)
+let printerWidth = '80';  // '55' or '80' (mm)
+let receiptLink = '';     // e-receipt / feedback link printed at bottom
 
 // UI State
 let curPage = 'dashboard';
-let dashPeriod = 'today';
-let ordFilterStatus = '';
-let ordFilterPay = '';
-let ordDateFilter = 'today';
-let kasDateFilter = 'today';
+// Period state per page: { mode: 'day'|'week'|'month', offset: number }
+// offset = 0 → current, -1 → previous, +1 → next (future is disabled)
+let dashPS = { mode: 'day', offset: 0 };
+let ordPS = { mode: 'day', offset: 0 };
+let kasPS = { mode: 'day', offset: 0 };
+let repPS = { mode: 'day', offset: 0 };
+let repMenuSort = { key: 'qty', dir: 'desc' };
+let repMenuPage = 1;
 let ordPage = 1;
 
 // Menu management tabs
@@ -110,22 +117,119 @@ async function hashSecret(s) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function _localYMD(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function isoToDate(iso) {
-  // Returns YYYY-MM-DD from ISO string
+  // Return YYYY-MM-DD in the user's LOCAL timezone.
+  // Slicing iso.slice(0,10) would give the UTC date, causing early-morning
+  // WIB (UTC+7) orders to fall on the previous day and disappear from
+  // "Hari Ini" filters.
   if (!iso) return '';
-  return iso.slice(0, 10);
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso).slice(0, 10);
+  return _localYMD(d);
 }
 
 function getWeekStart() {
   const d = new Date();
   const day = d.getDay(); // 0=sun
   d.setDate(d.getDate() - day);
-  return d.toISOString().slice(0, 10);
+  return _localYMD(d);
 }
 
 function getMonthStart() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// Resolve a period state { mode, offset } into { from, to, label } (both dates
+// inclusive, YYYY-MM-DD in local time).
+function resolvePeriod(ps) {
+  const now = new Date();
+  const mode = ps.mode || 'day';
+  const off = ps.offset || 0;
+  let from, to, label;
+
+  if (mode === 'day') {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + off);
+    from = to = _localYMD(d);
+    if (off === 0) label = 'Hari Ini';
+    else if (off === -1) label = 'Kemarin';
+    else if (off < 0 && off >= -6) label = Math.abs(off) + ' hari lalu';
+    else label = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  } else if (mode === 'week') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + (off * 7));
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    from = _localYMD(start);
+    to = _localYMD(end);
+    if (off === 0) label = 'Minggu Ini';
+    else if (off === -1) label = 'Minggu Lalu';
+    else {
+      const s = start.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+      const e = end.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+      label = s + ' - ' + e;
+    }
+  } else {
+    // month
+    const start = new Date(now.getFullYear(), now.getMonth() + off, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + off + 1, 0);
+    from = _localYMD(start);
+    to = _localYMD(end);
+    if (off === 0) label = 'Bulan Ini';
+    else if (off === -1) label = 'Bulan Lalu';
+    else label = start.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+  }
+  return { from, to, label };
+}
+
+function matchesPeriod(dateISO, ps) {
+  if (!dateISO) return false;
+  const { from, to } = resolvePeriod(ps);
+  return dateISO >= from && dateISO <= to;
+}
+
+// Render segmented mode picker + prev/next navigator into `containerId`.
+// `onChange` is called after any state mutation.
+function renderPeriodNav(containerId, ps, onChange) {
+  const el = g(containerId);
+  if (!el) return;
+  const { label } = resolvePeriod(ps);
+  const modes = [['day', 'Harian'], ['week', 'Mingguan'], ['month', 'Bulanan']];
+  const canForward = (ps.offset || 0) < 0;
+
+  el.innerHTML = `
+    <div class="pnav">
+      <div class="pnav-seg">
+        ${modes.map(([v, l]) =>
+          `<button type="button" class="pnav-seg-btn ${ps.mode === v ? 'on' : ''}" data-mode="${v}">${l}</button>`
+        ).join('')}
+      </div>
+      <div class="pnav-nav">
+        <button type="button" class="pnav-arrow" data-dir="-1" aria-label="Sebelumnya">&#x2039;</button>
+        <div class="pnav-label">${esc(label)}</div>
+        <button type="button" class="pnav-arrow" data-dir="1" ${canForward ? '' : 'disabled'} aria-label="Berikutnya">&#x203A;</button>
+      </div>
+    </div>
+  `;
+  el.querySelectorAll('.pnav-seg-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      if (ps.mode === b.dataset.mode) return;
+      ps.mode = b.dataset.mode;
+      ps.offset = 0;
+      onChange();
+    });
+  });
+  el.querySelectorAll('.pnav-arrow').forEach(b => {
+    b.addEventListener('click', () => {
+      if (b.disabled) return;
+      const dir = Number(b.dataset.dir);
+      if (dir > 0 && (ps.offset || 0) >= 0) return;
+      ps.offset = (ps.offset || 0) + dir;
+      onChange();
+    });
+  });
 }
 
 // ─── Seed Data ───────────────────────────────────────────────────────────────
@@ -376,7 +480,8 @@ function goPage(page, btn) {
   closeSidebar();
   const renders = {
     dashboard: refreshDash, orders: renderOrders, kas: renderKas,
-    menu: renderMenuPage, promo: renderPromo, settings: renderSettings, pos: renderPOS
+    menu: renderMenuPage, promo: renderPromo, settings: renderSettings, pos: renderPOS,
+    report: renderReport
   };
   if (renders[page]) renders[page]();
 }
@@ -398,11 +503,13 @@ function closeSidebar() {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function refreshDash() {
+  renderPeriodNav('dash-period-nav', dashPS, refreshDash);
+
   // Header date
   const dateEl = g('dash-date');
   if (dateEl) {
-    const periodLabel = {today:'Hari Ini', week:'Minggu Ini', month:'Bulan Ini'}[dashPeriod] || '';
-    dateEl.textContent = periodLabel + ' · ' + new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+    const lbl = resolvePeriod(dashPS).label;
+    dateEl.textContent = lbl + ' · ' + new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
   }
 
   const ords = _ordersInPeriod();
@@ -433,16 +540,7 @@ function refreshDash() {
 }
 
 function _ordersInPeriod() {
-  const today = todayISO();
-  const weekStart = getWeekStart();
-  const monthStart = getMonthStart();
-  return orders.filter(o => {
-    const d = isoToDate(o.isoDate) || o.date;
-    if (dashPeriod === 'today') return d === today;
-    if (dashPeriod === 'week') return d >= weekStart;
-    if (dashPeriod === 'month') return d >= monthStart;
-    return true;
-  });
+  return orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || o.date, dashPS));
 }
 
 function _topItems(ords) {
@@ -467,7 +565,7 @@ function _renderDashChart(ords) {
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = _localYMD(d);
     const label = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
     const rev = orders
       .filter(o => isoToDate(o.isoDate) === iso && o.payStatus === 'Lunas')
@@ -503,36 +601,20 @@ function _renderDashChart(ords) {
   });
 }
 
-function setDashPeriod(p) {
-  dashPeriod = p;
-  document.querySelectorAll('.dtab-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('dp-' + p);
-  if (btn) btn.classList.add('on');
-  refreshDash();
-}
 
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
 function renderOrders() {
-  const today = todayISO();
-  const weekStart = getWeekStart();
-  const monthStart = getMonthStart();
+  renderPeriodNav('ord-period-nav', ordPS, () => { ordPage = 1; renderOrders(); });
 
-  let filtered = orders.filter(o => {
-    const d = isoToDate(o.isoDate) || '';
-    if (ordDateFilter === 'today') { if (d !== today) return false; }
-    else if (ordDateFilter === 'week') { if (d < weekStart) return false; }
-    else if (ordDateFilter === 'month') { if (d < monthStart) return false; }
-    if (ordFilterStatus && o.status !== ordFilterStatus) return false;
-    if (ordFilterPay && o.payStatus !== ordFilterPay) return false;
-    return true;
-  });
+  let filtered = orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || '', ordPS));
 
+  const perPage = 10;
   const total = filtered.length;
-  const pages = Math.ceil(total / 15) || 1;
+  const pages = Math.ceil(total / perPage) || 1;
   if (ordPage > pages) ordPage = pages;
 
-  const paginated = filtered.slice((ordPage - 1) * 15, ordPage * 15);
+  const paginated = filtered.slice((ordPage - 1) * perPage, ordPage * perPage);
 
   const el = g('orders-list');
   if (!el) return;
@@ -540,22 +622,28 @@ function renderOrders() {
   if (!paginated.length) {
     el.innerHTML = '<div class="empty-state"><p>Belum ada pesanan</p></div>';
   } else {
-    el.innerHTML = paginated.map(o => `
-      <div class="order-card" onclick="openOrderDetail('${esc(o.id)}')">
-        <div class="order-card-header">
-          <span class="order-id">${esc(o.id)}</span>
-          <span class="badge ${o.status === 'Selesai' ? 'badge-gr' : 'badge-am'}">${esc(o.status)}</span>
+    el.innerHTML = paginated.map(o => {
+      const timePart = o.isoDate
+        ? new Date(o.isoDate).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        : '';
+      const dateStr = esc(o.date) + (timePart ? ' · ' + esc(timePart) : '');
+      const pay = esc(o.payMethod || '-');
+      const badgeClass = o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re';
+      const badgeText = esc(o.payStatus);
+      return `
+        <div class="order-card" onclick="openOrderDetail('${esc(o.id)}')">
+          <span class="oc-id">${esc(o.id)}</span>
+          <span class="oc-date">${dateStr}</span>
+          <span class="oc-pay">${pay}</span>
+          <span class="badge ${badgeClass} oc-status">${badgeText}</span>
+          <span class="oc-total">${fmt(o.total)}</span>
+          <span class="oc-meta-mob">
+            <span>${dateStr}</span> &bull; <span>${pay}</span> &bull;
+            <span class="badge ${badgeClass}">${badgeText}</span>
+          </span>
         </div>
-        <div class="order-card-body">
-          <span class="order-meta">${esc(o.date)}${o.custName ? ' &bull; ' + esc(o.custName) : ''}${o.tableNo ? ' &bull; Meja ' + esc(o.tableNo) : ''}</span>
-          <span class="order-total">${fmt(o.total)}</span>
-        </div>
-        <div class="order-card-footer">
-          <span class="badge ${o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re'}">${esc(o.payStatus)}</span>
-          <span class="order-pay-method">${esc(o.payMethod)}</span>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
   // Pagination
@@ -580,32 +668,6 @@ function renderOrders() {
 }
 
 function ordGo(p) { ordPage = p; renderOrders(); }
-
-function setOrdDateFilter(v) {
-  ordDateFilter = v;
-  ordPage = 1;
-  document.querySelectorAll('.ord-date-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('odf-' + v);
-  if (btn) btn.classList.add('on');
-  renderOrders();
-}
-
-function setOrdFilter(type, val) {
-  if (type === 'status') { ordFilterStatus = ordFilterStatus === val ? '' : val; }
-  if (type === 'pay') { ordFilterPay = ordFilterPay === val ? '' : val; }
-  ordPage = 1;
-  _updateOrdFilterBtns();
-  renderOrders();
-}
-
-function _updateOrdFilterBtns() {
-  document.querySelectorAll('.ord-filter-btn[data-type="status"]').forEach(b => {
-    b.classList.toggle('on', b.dataset.val === ordFilterStatus);
-  });
-  document.querySelectorAll('.ord-filter-btn[data-type="pay"]').forEach(b => {
-    b.classList.toggle('on', b.dataset.val === ordFilterPay);
-  });
-}
 
 function openOrderDetail(id) {
   const o = orders.find(x => x.id === id);
@@ -639,25 +701,46 @@ function openOrderDetail(id) {
     </div>
     <div class="detail-actions">
       <div class="detail-badges">
-        <span class="badge ${o.status === 'Selesai' ? 'badge-gr' : 'badge-am'}">${esc(o.status)}</span>
         <span class="badge ${o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re'}">${esc(o.payStatus)}</span>
       </div>
       <div class="detail-btns">
-        ${o.status !== 'Selesai' ? `<button class="btn btn-sm btn-sec" onclick="setOrderStatus('${esc(o.id)}','Selesai');closeModal('m-order-detail')">Tandai Selesai</button>` : ''}
         ${o.payStatus !== 'Lunas' ? `<button class="btn btn-sm btn-p" onclick="setOrderPayStatus('${esc(o.id)}','Lunas');closeModal('m-order-detail')">Tandai Lunas</button>` : ''}
+        <button class="btn btn-sm btn-danger" onclick="deleteOrder('${esc(o.id)}')">
+          <i data-lucide="trash-2" style="width:14px;height:14px"></i> Hapus Pesanan
+        </button>
       </div>
     </div>
   `;
   openModal('m-order-detail');
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function setOrderStatus(id, status) {
+function deleteOrder(id) {
   const o = orders.find(x => x.id === id);
   if (!o) return;
-  o.status = status;
-  syncOrder(o);
-  toast('Status diperbarui: ' + status);
+  if (!confirm('Hapus pesanan ' + id + '? Entri kas terkait juga akan dihapus.')) return;
+
+  // Remove from local state + persist
+  orders = orders.filter(x => x.id !== id);
+  syncAllOrders();
+  if (typeof sbDelete === 'function') sbDelete('orders', id);
+
+  // Also remove auto-generated kas entries linked to this order
+  const kasTag = 'Penjualan - ' + id;
+  const kasToDelete = kasLog.filter(k => k.desc === kasTag);
+  if (kasToDelete.length) {
+    kasLog = kasLog.filter(k => k.desc !== kasTag);
+    syncAllKas();
+    if (typeof sbDelete === 'function') {
+      kasToDelete.forEach(k => sbDelete('kas_log', k.id));
+    }
+  }
+
+  closeModal('m-order-detail');
+  toast('Pesanan dihapus');
   renderOrders();
+  if (curPage === 'kas' && typeof renderKas === 'function') renderKas();
+  if (curPage === 'dashboard' && typeof refreshDash === 'function') refreshDash();
 }
 
 function setOrderPayStatus(id, ps) {
@@ -688,17 +771,9 @@ function setOrderPayStatus(id, ps) {
 // ─── Kas ──────────────────────────────────────────────────────────────────────
 
 function renderKas() {
-  const today = todayISO();
-  const weekStart = getWeekStart();
-  const monthStart = getMonthStart();
+  renderPeriodNav('kas-period-nav', kasPS, renderKas);
 
-  let filtered = kasLog.filter(l => {
-    const d = l.date || '';
-    if (kasDateFilter === 'today') return d === today;
-    if (kasDateFilter === 'week') return d >= weekStart;
-    if (kasDateFilter === 'month') return d >= monthStart;
-    return true;
-  });
+  let filtered = kasLog.filter(l => matchesPeriod(l.date || '', kasPS));
 
   const totalIn = filtered.filter(l => l.type === 'in').reduce((s, l) => s + (l.amount || 0), 0);
   const totalOut = filtered.filter(l => l.type === 'out').reduce((s, l) => s + (l.amount || 0), 0);
@@ -749,14 +824,6 @@ function renderKas() {
       </div>
     `;
   }).join('');
-}
-
-function setKasDateFilter(v) {
-  kasDateFilter = v;
-  document.querySelectorAll('.kas-date-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('kdf-' + v);
-  if (btn) btn.classList.add('on');
-  renderKas();
 }
 
 function openKasTambah(type) {
@@ -1129,6 +1196,228 @@ function _promoBeliGratisLabel(p) {
   return `Beli ${buyLabel} → Gratis ${freeLabel}`;
 }
 
+// ─── Laporan Produk Terjual ──────────────────────────────────────────────────
+
+function _reportData() {
+  const ords = orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || o.date, repPS));
+
+  const byMenu = {};   // key = menu name (fallback if id missing) → { name, catId, qty, revenue }
+  const byCat = {};    // key = catId → { name, qty, revenue }
+  let totalItems = 0, totalRevenue = 0;
+
+  ords.forEach(o => {
+    (o.items || []).forEach(it => {
+      const qty = Number(it.qty) || 0;
+      const rev = Number(it.lineTotal) || 0;
+      totalItems += qty;
+      totalRevenue += rev;
+
+      // Resolve category from live menu (items are order-time snapshots without catId)
+      const menuRef = menuItems.find(m => m.id === it.id);
+      const catId = menuRef ? menuRef.catId : '_unknown';
+
+      const key = it.id || it.name;
+      if (!byMenu[key]) byMenu[key] = { name: it.name, catId, qty: 0, revenue: 0 };
+      byMenu[key].qty += qty;
+      byMenu[key].revenue += rev;
+
+      if (!byCat[catId]) {
+        const c = menuCats.find(x => x.id === catId);
+        byCat[catId] = { name: c ? c.name : 'Tanpa Kategori', qty: 0, revenue: 0 };
+      }
+      byCat[catId].qty += qty;
+      byCat[catId].revenue += rev;
+    });
+  });
+
+  return {
+    orders: ords,
+    orderCount: ords.length,
+    totalItems,
+    totalRevenue,
+    menus: Object.values(byMenu).sort((a, b) => b.qty - a.qty),
+    cats: Object.values(byCat).sort((a, b) => b.qty - a.qty)
+  };
+}
+
+// Sort a report menu row list by the given key/dir.
+function _sortMenus(menus, key, dir) {
+  const mult = dir === 'asc' ? 1 : -1;
+  const catNameFor = (cid) => cid === '_unknown' ? '' : (menuCats.find(c => c.id === cid)?.name || '');
+  const arr = menus.slice();
+  arr.sort((a, b) => {
+    let av, bv;
+    if (key === 'name') { av = a.name.toLowerCase(); bv = b.name.toLowerCase(); }
+    else if (key === 'cat') { av = catNameFor(a.catId).toLowerCase(); bv = catNameFor(b.catId).toLowerCase(); }
+    else if (key === 'qty') { av = a.qty; bv = b.qty; }
+    else { av = a.revenue; bv = b.revenue; }
+    if (av < bv) return -1 * mult;
+    if (av > bv) return 1 * mult;
+    return 0;
+  });
+  return arr;
+}
+
+// Toggle sort on a column: same key → flip direction; different key → default
+// desc for numeric, asc for text.
+function setRepMenuSort(key) {
+  if (repMenuSort.key === key) {
+    repMenuSort.dir = repMenuSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    repMenuSort.key = key;
+    repMenuSort.dir = (key === 'name' || key === 'cat') ? 'asc' : 'desc';
+  }
+  repMenuPage = 1;
+  renderReport();
+}
+
+function repMenuGo(p) { repMenuPage = p; renderReport(); }
+
+function _sortInd(key) {
+  const active = repMenuSort.key === key;
+  const arrow = !active ? '↕' : (repMenuSort.dir === 'asc' ? '↑' : '↓');
+  return `<span class="sort-ind">${arrow}</span>`;
+}
+
+function _sortClass(key) {
+  return 'sortable' + (repMenuSort.key === key ? ' sort-on' : '');
+}
+
+function renderReport() {
+  renderPeriodNav('rep-period-nav', repPS, renderReport);
+
+  const lbl = g('rep-period-label');
+  if (lbl) lbl.textContent = 'Periode: ' + resolvePeriod(repPS).label;
+
+  const data = _reportData();
+
+  // Category table (unsorted here — comes pre-sorted by qty desc from _reportData)
+  const catEl = g('rep-cat-table');
+  if (catEl) {
+    if (!data.cats.length) {
+      catEl.innerHTML = '<div class="rep-empty">Belum ada data</div>';
+    } else {
+      const rows = data.cats.map((c, i) =>
+        `<tr>
+          <td class="rank">${i + 1}</td>
+          <td>${esc(c.name)}</td>
+          <td class="num">${c.qty}</td>
+          <td class="num">${fmt(c.revenue)}</td>
+        </tr>`
+      ).join('');
+      catEl.innerHTML = `<table class="rep-tbl">
+        <thead><tr>
+          <th class="rank">#</th><th>Kategori</th>
+          <th class="num">Qty</th><th class="num">Pendapatan</th>
+        </tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row"><td colspan="2">TOTAL</td>
+            <td class="num">${data.totalItems}</td>
+            <td class="num">${fmt(data.totalRevenue)}</td></tr>
+        </tbody>
+      </table>`;
+    }
+  }
+
+  // Menu table — sortable + paginated (10/page)
+  const menuEl = g('rep-menu-table');
+  const pgEl = g('rep-menu-pagination');
+  if (menuEl) {
+    if (!data.menus.length) {
+      menuEl.innerHTML = '<div class="rep-empty">Belum ada penjualan pada periode ini</div>';
+      if (pgEl) pgEl.innerHTML = '';
+    } else {
+      const sorted = _sortMenus(data.menus, repMenuSort.key, repMenuSort.dir);
+      const perPage = 10;
+      const total = sorted.length;
+      const pages = Math.ceil(total / perPage) || 1;
+      if (repMenuPage > pages) repMenuPage = pages;
+      const startIdx = (repMenuPage - 1) * perPage;
+      const paginated = sorted.slice(startIdx, startIdx + perPage);
+
+      const rows = paginated.map((m, i) => {
+        const catName = m.catId === '_unknown'
+          ? '—'
+          : (menuCats.find(c => c.id === m.catId)?.name || '—');
+        return `<tr>
+          <td class="rank">${startIdx + i + 1}</td>
+          <td>${esc(m.name)}</td>
+          <td>${esc(catName)}</td>
+          <td class="num">${m.qty}</td>
+          <td class="num">${fmt(m.revenue)}</td>
+        </tr>`;
+      }).join('');
+
+      menuEl.innerHTML = `<table class="rep-tbl">
+        <thead><tr>
+          <th class="rank">#</th>
+          <th class="${_sortClass('name')}" onclick="setRepMenuSort('name')">Nama Menu ${_sortInd('name')}</th>
+          <th class="${_sortClass('cat')}" onclick="setRepMenuSort('cat')">Kategori ${_sortInd('cat')}</th>
+          <th class="num ${_sortClass('qty')}" onclick="setRepMenuSort('qty')">Qty ${_sortInd('qty')}</th>
+          <th class="num ${_sortClass('rev')}" onclick="setRepMenuSort('rev')">Pendapatan ${_sortInd('rev')}</th>
+        </tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row"><td colspan="3">TOTAL</td>
+            <td class="num">${data.totalItems}</td>
+            <td class="num">${fmt(data.totalRevenue)}</td></tr>
+        </tbody>
+      </table>`;
+
+      if (pgEl) {
+        if (pages <= 1) { pgEl.innerHTML = ''; }
+        else {
+          pgEl.innerHTML = `
+            <button class="pg-btn" onclick="repMenuGo(${repMenuPage - 1})" ${repMenuPage <= 1 ? 'disabled' : ''}>Sebelumnya</button>
+            <span class="pg-info">Hal ${repMenuPage} / ${pages} · ${total} menu</span>
+            <button class="pg-btn" onclick="repMenuGo(${repMenuPage + 1})" ${repMenuPage >= pages ? 'disabled' : ''}>Berikutnya</button>
+          `;
+        }
+      }
+    }
+  }
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function exportReportCSV(kind) {
+  const data = _reportData();
+  const rows = [];
+  const lbl = resolvePeriod(repPS).label;
+  const stamp = _localYMD(new Date());
+
+  if (kind === 'menu') {
+    rows.push(['#', 'Nama Menu', 'Kategori', 'Qty', 'Pendapatan']);
+    const sorted = _sortMenus(data.menus, repMenuSort.key, repMenuSort.dir);
+    sorted.forEach((m, i) => {
+      const catName = m.catId === '_unknown' ? '—' : (menuCats.find(c => c.id === m.catId)?.name || '—');
+      rows.push([i + 1, m.name, catName, m.qty, m.revenue]);
+    });
+    rows.push(['', 'TOTAL', '', data.totalItems, data.totalRevenue]);
+  } else {
+    rows.push(['#', 'Kategori', 'Qty', 'Pendapatan']);
+    data.cats.forEach((c, i) => rows.push([i + 1, c.name, c.qty, c.revenue]));
+    rows.push(['', 'TOTAL', data.totalItems, data.totalRevenue]);
+  }
+
+  const csv = rows.map(r =>
+    r.map(v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',')
+  ).join('\n');
+
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `laporan-${kind}-${stamp}-${(lbl || '').replace(/\s+/g, '_')}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('CSV diunduh');
+}
+
 // ─── Menu Management ─────────────────────────────────────────────────────────
 
 function renderMenuPage() {
@@ -1344,6 +1633,15 @@ function renderSettings() {
   se('set-store-name', storeName);
   se('set-store-addr', storeAddr);
   se('set-store-wa', storeWa);
+  se('set-store-footer', storeFooter);
+  se('set-receipt-link', receiptLink);
+
+  // Printer width radio
+  document.querySelectorAll('input[name="printer-width"]').forEach(r => {
+    r.checked = (r.value === String(printerWidth));
+  });
+
+  _renderLogoPreview();
 
   renderEmpList();
   renderOutletList();
@@ -1353,8 +1651,108 @@ function saveStoreInfo() {
   storeName = g('set-store-name').value.trim() || storeName;
   storeAddr = g('set-store-addr').value.trim();
   storeWa = g('set-store-wa').value.trim();
+  const ft = g('set-store-footer');
+  if (ft) storeFooter = ft.value.trim();
+  const rl = g('set-receipt-link');
+  if (rl) receiptLink = rl.value.trim();
+  const pw = document.querySelector('input[name="printer-width"]:checked');
+  if (pw) printerWidth = pw.value;
   syncSettings();
   toast('Informasi toko disimpan');
+}
+
+// ─── Receipt Logo ─────────────────────────────────────────────────────────────
+
+function _renderLogoPreview() {
+  const wrap = g('logo-preview');
+  if (!wrap) return;
+  if (storeLogoBW) {
+    wrap.innerHTML = `<img src="${storeLogoBW}" alt="Logo BW" style="max-width:120px;max-height:120px;background:#fff;padding:6px;border:1px solid var(--b2);border-radius:6px">
+      <button type="button" class="btn btn-sec btn-sm" onclick="removeStoreLogo()" style="margin-left:12px">Hapus Logo</button>`;
+  } else {
+    wrap.innerHTML = `<div style="font-size:12px;color:var(--t2)">Belum ada logo. Upload gambar untuk ditampilkan di atas struk.</div>`;
+  }
+}
+
+function onLogoFilePicked(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { toast('File harus berupa gambar', 'err'); return; }
+  if (file.size > 3 * 1024 * 1024) { toast('Ukuran logo maksimal 3 MB', 'err'); return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const { color, bw } = _logoToBW(img);
+      storeLogo = color;
+      storeLogoBW = bw;
+      syncSettings();
+      _renderLogoPreview();
+      toast('Logo disimpan');
+      input.value = '';
+    };
+    img.onerror = () => toast('Gagal membaca gambar', 'err');
+    img.src = ev.target.result;
+  };
+  reader.onerror = () => toast('Gagal membaca file', 'err');
+  reader.readAsDataURL(file);
+}
+
+function removeStoreLogo() {
+  if (!confirm('Hapus logo struk?')) return;
+  storeLogo = '';
+  storeLogoBW = '';
+  syncSettings();
+  _renderLogoPreview();
+  toast('Logo dihapus');
+}
+
+// Downscale + threshold to pure B/W (1-bit look, stored as PNG data URL).
+function _logoToBW(img) {
+  const maxW = 384; // matches ~58mm printer raster; scales down on 55mm and up-fits on 80mm
+  const scale = Math.min(1, maxW / img.width);
+  const w = Math.max(8, Math.round(img.width * scale));
+  const h = Math.max(8, Math.round(img.height * scale));
+
+  // Color-preserved (downscaled) version for reference
+  const cv1 = document.createElement('canvas');
+  cv1.width = w; cv1.height = h;
+  const cx1 = cv1.getContext('2d');
+  cx1.fillStyle = '#fff'; cx1.fillRect(0, 0, w, h);
+  cx1.drawImage(img, 0, 0, w, h);
+  const color = cv1.toDataURL('image/png');
+
+  // BW threshold version
+  const cv2 = document.createElement('canvas');
+  cv2.width = w; cv2.height = h;
+  const cx2 = cv2.getContext('2d');
+  cx2.fillStyle = '#fff'; cx2.fillRect(0, 0, w, h);
+  cx2.drawImage(img, 0, 0, w, h);
+  const imgData = cx2.getImageData(0, 0, w, h);
+  const px = imgData.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const alpha = px[i + 3];
+    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    // Transparent → white; else threshold at ~150 (a bit lenient so line art stays)
+    const black = alpha > 100 && lum < 150;
+    const v = black ? 0 : 255;
+    px[i] = px[i + 1] = px[i + 2] = v;
+    px[i + 3] = 255;
+  }
+  cx2.putImageData(imgData, 0, 0);
+  const bw = cv2.toDataURL('image/png');
+
+  return { color, bw };
+}
+
+// Printer columns for monospace formatting (Bluetooth ESC/POS)
+function printerCols() {
+  return String(printerWidth) === '55' ? 32 : 48;
+}
+
+// Printer paper width in mm (for browser print CSS)
+function printerPaperMM() {
+  return String(printerWidth) === '55' ? 55 : 80;
 }
 
 async function changeOwnerPwd() {
