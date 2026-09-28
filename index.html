@@ -488,6 +488,28 @@
     }
     .btn-place-order:hover { background: var(--pd); }
     .btn-place-order:active { transform: scale(.98); }
+    .btn-place-order:disabled { background: var(--b1); color: var(--t3); cursor: not-allowed; transform: none; }
+    /* Cash tendered block (only visible for Tunai) */
+    .cart-cash-block { margin-bottom: 12px; }
+    .cart-cash-label { font-size: 11px; font-weight: 700; color: var(--t2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
+    .cart-cash-input {
+      width: 100%; padding: 10px 12px; border: 1.5px solid var(--b1); border-radius: var(--rs);
+      font-size: 15px; font-weight: 700; background: var(--bg); text-align: right; box-sizing: border-box;
+      transition: border-color .15s; font-family: inherit;
+    }
+    .cart-cash-input:focus { outline: none; border-color: var(--p); background: #fff; }
+    .cash-preset-row { display: flex; gap: 5px; margin-top: 6px; }
+    .cash-preset-btn {
+      flex: 1; padding: 6px 4px; border-radius: var(--rs); font-size: 11px; font-weight: 600;
+      background: var(--bg); border: 1.5px solid var(--b1); color: var(--t2); cursor: pointer; transition: .15s;
+    }
+    .cash-preset-btn:hover { border-color: var(--p); color: var(--p); }
+    .cart-change-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 10px; margin-top: 8px; border-radius: var(--rs);
+      background: var(--grb); color: #16a34a; font-size: 13px; font-weight: 700;
+    }
+    .cart-change-row.short { background: var(--reb); color: var(--re); }
     .pos-search-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
     .pos-search {
       flex: 1; padding: 9px 12px; border: 1.5px solid var(--b1); border-radius: var(--rs);
@@ -685,6 +707,24 @@
     @media(min-width: 769px) {
       .pos-mobile-header { display: none; }
     }
+
+    /* ── Tablet: icon-only sidebar (769–1199px) ───────────────── */
+    @media(min-width: 769px) and (max-width: 1199px) {
+      #sbnav { width: 64px; }
+      #mc { margin-left: 64px; }
+      .sb-logo { padding: 16px 6px; text-align: center; }
+      .sb-logo-title, .sb-logo-sub { display: none; }
+      .sb-nav-list { padding: 8px 0; }
+      .ni { justify-content: center; padding: 12px 6px; margin: 2px 6px; gap: 0; }
+      .ni-label { display: none; }
+      .sb-user { justify-content: center; padding: 8px 4px; }
+      .sb-user-name { display: none; }
+      .sb-logout { justify-content: center; padding: 10px 4px; gap: 0; }
+      .sb-logout-label { display: none; }
+      /* POS: tighten cart & menu card min so 3 columns fit on tablet */
+      .pos-split { grid-template-columns: 1fr 300px; }
+      .menu-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+    }
   </style>
 </head>
 <body>
@@ -843,7 +883,7 @@
       </div>
       <div class="sb-logout" onclick="logout()">
         <i data-lucide="log-out"></i>
-        Keluar
+        <span class="sb-logout-label">Keluar</span>
       </div>
     </div>
   </nav>
@@ -953,7 +993,22 @@
               <button class="pay-method-btn" data-method="Transfer" onclick="setPayMethod('Transfer')">Transfer</button>
               <button class="pay-method-btn" data-method="QRIS" onclick="setPayMethod('QRIS')">QRIS</button>
             </div>
-            <button class="btn-place-order" onclick="placeOrder()">Proses Pesanan</button>
+            <div class="cart-cash-block" id="cart-cash-block">
+              <div class="cart-cash-label">Uang Diterima</div>
+              <input class="cart-cash-input" id="cart-cash-input" type="text" inputmode="numeric"
+                     autocomplete="off" placeholder="Rp 0" oninput="onCashInput(this.value)">
+              <div class="cash-preset-row">
+                <button class="cash-preset-btn" onclick="setCashPas()">Pas</button>
+                <button class="cash-preset-btn" onclick="addCashPreset(20000)">20rb</button>
+                <button class="cash-preset-btn" onclick="addCashPreset(50000)">50rb</button>
+                <button class="cash-preset-btn" onclick="addCashPreset(100000)">100rb</button>
+              </div>
+              <div class="cart-change-row" id="cart-change-row" style="display:none">
+                <span id="cart-change-label">Kembalian</span>
+                <span id="cart-change-amt">Rp 0</span>
+              </div>
+            </div>
+            <button class="btn-place-order" id="btn-place-order" onclick="placeOrder()">Proses Pesanan</button>
           </div>
         </div>
       </div>

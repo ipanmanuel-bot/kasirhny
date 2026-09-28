@@ -11,6 +11,7 @@ let posSubtotal = 0;
 let posPromoAmt = 0;
 let posTotal = 0;
 let posActivePromo = null;
+let posCashReceived = 0;
 
 // Mobile cart view toggle
 let showCartMobile = false;
@@ -126,6 +127,73 @@ function renderPOSCart() {
   document.querySelectorAll('.pay-method-btn').forEach(b => {
     b.classList.toggle('on', b.dataset.method === posPayMethod);
   });
+
+  _renderCashBlock();
+}
+
+// ─── Cash / Kembalian ─────────────────────────────────────────────────────────
+
+function _renderCashBlock() {
+  const block = g('cart-cash-block');
+  if (!block) return;
+  block.style.display = posPayMethod === 'Tunai' ? '' : 'none';
+  const inp = g('cart-cash-input');
+  if (inp) inp.value = posCashReceived > 0 ? 'Rp ' + posCashReceived.toLocaleString('id-ID') : '';
+  _renderCashSummary();
+}
+
+function _renderCashSummary() {
+  const row = g('cart-change-row');
+  const lbl = g('cart-change-label');
+  const amt = g('cart-change-amt');
+  const btn = g('btn-place-order');
+  if (!row || !lbl || !amt) return;
+
+  const isTunai = posPayMethod === 'Tunai';
+  const hasInput = posCashReceived > 0;
+  const diff = posCashReceived - posTotal;
+
+  if (!isTunai || !hasInput) {
+    row.style.display = 'none';
+    if (btn) { btn.disabled = false; btn.textContent = 'Proses Pesanan'; }
+    return;
+  }
+
+  row.style.display = '';
+  if (diff >= 0) {
+    row.classList.remove('short');
+    lbl.textContent = 'Kembalian';
+    amt.textContent = 'Rp ' + diff.toLocaleString('id-ID');
+    if (btn) { btn.disabled = false; btn.textContent = 'Proses Pesanan'; }
+  } else {
+    row.classList.add('short');
+    lbl.textContent = 'Kurang';
+    amt.textContent = 'Rp ' + Math.abs(diff).toLocaleString('id-ID');
+    if (btn) { btn.disabled = true; btn.textContent = 'Uang Kurang'; }
+  }
+}
+
+function onCashInput(val) {
+  const digits = String(val || '').replace(/\D/g, '');
+  posCashReceived = digits ? parseInt(digits, 10) : 0;
+  const inp = g('cart-cash-input');
+  if (inp) {
+    inp.value = posCashReceived > 0 ? 'Rp ' + posCashReceived.toLocaleString('id-ID') : '';
+    // Keep caret at end (input is right-aligned)
+    const len = inp.value.length;
+    try { inp.setSelectionRange(len, len); } catch (e) {}
+  }
+  _renderCashSummary();
+}
+
+function setCashPas() {
+  posCashReceived = posTotal;
+  _renderCashBlock();
+}
+
+function addCashPreset(amount) {
+  posCashReceived = (posCashReceived || 0) + amount;
+  _renderCashBlock();
 }
 
 // ─── Cart Operations ──────────────────────────────────────────────────────────
@@ -194,6 +262,7 @@ function recalcCart() {
 function clearCart() {
   cart = [];
   posActiveCat = 'all';
+  posCashReceived = 0;
   renderPOS();
 }
 
@@ -202,6 +271,12 @@ function clearCart() {
 function placeOrder() {
   if (!cart.length) { toast('Keranjang masih kosong', 'warn'); return; }
   recalcCart();
+
+  const cashEntered = posPayMethod === 'Tunai' && posCashReceived > 0;
+  if (cashEntered && posCashReceived < posTotal) {
+    toast('Uang diterima kurang dari total', 'warn');
+    return;
+  }
 
   const outId = curStaff?.oid || outlets[0]?.id || '';
   const o = {
@@ -220,7 +295,9 @@ function placeOrder() {
     date: todayStr(),
     isoDate: new Date().toISOString(),
     handledBy: curStaff?.name || 'Owner',
-    outletId: outId
+    outletId: outId,
+    cashReceived: cashEntered ? posCashReceived : 0,
+    changeAmt: cashEntered ? (posCashReceived - posTotal) : 0
   };
 
   orders.unshift(o);
@@ -347,6 +424,10 @@ function buildReceiptHTML(o) {
         ${o.promoAmt > 0 ? `<div class="r-row"><span>Diskon Promo</span><span>-Rp ${fmtAmt(o.promoAmt)}</span></div>` : ''}
         <div class="r-row r-row-total"><span>Total</span><span>Rp ${fmtAmt(o.total)}</span></div>
         <div class="r-row"><span>Metode Bayar</span><span>${esc(payMethod)}</span></div>
+        ${(o.payMethod === 'Tunai' && (o.cashReceived || 0) > 0) ? `
+          <div class="r-row"><span>Bayar</span><span>Rp ${fmtAmt(o.cashReceived)}</span></div>
+          <div class="r-row"><span>Kembali</span><span>Rp ${fmtAmt(o.changeAmt || 0)}</span></div>
+        ` : ''}
       </div>
 
       ${o.notes ? `<div class="r-notes">Catatan: ${esc(o.notes)}</div>` : ''}
@@ -623,6 +704,10 @@ async function buildEscReceiptResto(o) {
   if ((o.promoAmt || 0) > 0) parts.push(escText(padLR('Diskon Promo', '-Rp ' + fmtAmt(o.promoAmt))));
   parts.push(BON, escText(padLR('Total', 'Rp ' + fmtAmt(o.total))), BOFF);
   parts.push(escText(padLR('Metode Bayar', o.payMethod || 'Tunai')));
+  if (o.payMethod === 'Tunai' && (o.cashReceived || 0) > 0) {
+    parts.push(escText(padLR('Bayar', 'Rp ' + fmtAmt(o.cashReceived))));
+    parts.push(escText(padLR('Kembali', 'Rp ' + fmtAmt(o.changeAmt || 0))));
+  }
 
   if (o.notes) parts.push(escText('\nCatatan: ' + o.notes + '\n'));
 
@@ -905,6 +990,8 @@ function setPayMethod(method) {
   document.querySelectorAll('.pay-method-btn').forEach(b => {
     b.classList.toggle('on', b.dataset.method === method);
   });
+  if (method !== 'Tunai') posCashReceived = 0;
+  _renderCashBlock();
 }
 
 // Mobile: toggle cart panel visibility
