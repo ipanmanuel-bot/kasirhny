@@ -516,12 +516,13 @@ function refreshDash() {
   const revenue = ords.filter(o => o.payStatus === 'Lunas').reduce((s, o) => s + (o.total || 0), 0);
   const count = ords.length;
   const avg = count > 0 ? Math.round(revenue / count) : 0;
+  const itemsSold = ords.reduce((s, o) => s + (o.items || []).reduce((n, it) => n + (it.qty || 0), 0), 0);
 
   const se = (id, v) => { const el = g(id); if (el) el.textContent = v; };
   se('d-revenue', fmt(revenue));
   const sub = g('d-revenue-sub');
   if (sub) sub.textContent = count + ' pesanan · rata-rata ' + fmt(avg);
-  se('d-count', count);
+  se('d-count', itemsSold);
 
   // Payment breakdown
   const tunai = ords.filter(o => o.payMethod === 'Tunai').reduce((s, o) => s + o.total, 0);
