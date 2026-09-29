@@ -75,10 +75,15 @@ function renderPOSMenu() {
 function renderPOSCart() {
   recalcCart();
 
-  // Update cart toggle button badge (mobile)
+  // Update cart toggle button badge (mobile) + header pill
   const badge = g('cart-mobile-badge');
   const totalQty = cart.reduce((s, c) => s + c.qty, 0);
   if (badge) badge.textContent = totalQty || '';
+  const pill = g('cart-pill-count');
+  if (pill) {
+    pill.style.display = totalQty > 0 ? '' : 'none';
+    pill.textContent = totalQty + ' item';
+  }
 
   const el = g('pos-cart-inner');
   if (!el) return;
