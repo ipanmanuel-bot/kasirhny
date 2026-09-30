@@ -440,8 +440,8 @@ function _applyRoleAccess() {
   const isStaff = curRole === 'staff';
   // Toggle class di body untuk mobile CSS
   document.body.classList.toggle('is-staff', isStaff);
-  // Nav item yang boleh diakses karyawan (POS, Dashboard, Laporan)
-  const staffAllowed = ['pos', 'dashboard', 'report'];
+  // Nav item yang boleh diakses karyawan (POS, Dashboard, Pesanan, Laporan)
+  const staffAllowed = ['pos', 'dashboard', 'orders', 'report'];
   document.querySelectorAll('#sbnav .ni').forEach(el => {
     const page = el.getAttribute('data-page');
     if (!page) return;
