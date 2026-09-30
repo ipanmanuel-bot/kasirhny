@@ -706,6 +706,9 @@ function openOrderDetail(id) {
       </div>
       <div class="detail-btns">
         ${o.payStatus !== 'Lunas' ? `<button class="btn btn-sm btn-p" onclick="setOrderPayStatus('${esc(o.id)}','Lunas');closeModal('m-order-detail')">Tandai Lunas</button>` : ''}
+        <button class="btn btn-sm btn-p" onclick="closeModal('m-order-detail');openOrderReceipt(orders.find(x=>x.id==='${esc(o.id)}'))">
+          <i data-lucide="printer" style="width:14px;height:14px"></i> Cetak Struk
+        </button>
         <button class="btn btn-sm btn-danger" onclick="deleteOrder('${esc(o.id)}')">
           <i data-lucide="trash-2" style="width:14px;height:14px"></i> Hapus Pesanan
         </button>
