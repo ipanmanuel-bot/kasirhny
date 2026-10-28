@@ -2,18 +2,23 @@
 // KasirHnY
 
 const SUPABASE_URL = 'https://eimqoidhdyuqpbpmlkvz.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_z_zDDwhodZaYFAXeyiWEQQ_6ET0zrPe';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpbXFvaWRoZHl1cXBicG1sa3Z6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NzM0NzcsImV4cCI6MjEwMDQ0OTQ3N30.zSNPtFuRYZmvjC2259iJFBM2cUPPA7az03FCKAsa_6Q';
 
-let supabase = null;
+let sbClient = null;
 let supaEnabled = false;
 let currentUserId = null;
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 function initSync() {
+  const saved = localStorage.getItem('cprs_code');
+  if (saved) currentUserId = saved;
+
+  if (sbClient) return;
+
   if (typeof window.supabase !== 'undefined') {
     try {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       supaEnabled = true;
     } catch (e) {
       console.warn('[sync] Supabase init failed:', e);
@@ -21,67 +26,65 @@ function initSync() {
   }
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
+// ─── Kode Toko ───────────────────────────────────────────────────────────────
 
-async function checkSession() {
-  if (!supaEnabled || !supabase) return null;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      currentUserId = session.user.id;
-      return session.user;
-    }
-  } catch (e) { console.warn('[auth] checkSession error:', e); }
-  return null;
+function getStoredCode() {
+  return localStorage.getItem('cprs_code') || null;
 }
 
-async function authSignIn(email, password) {
-  if (!supaEnabled || !supabase) return { error: 'Supabase tidak tersedia' };
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
-    currentUserId = data.user.id;
-    return { user: data.user };
-  } catch (e) { return { error: e.message }; }
+function saveStoreCode(code) {
+  localStorage.setItem('cprs_code', code);
+  currentUserId = code;
 }
 
-async function authSignUp(email, password) {
-  if (!supaEnabled || !supabase) return { error: 'Supabase tidak tersedia' };
-  try {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) return { error: error.message };
-    if (data.user && !data.session) return { needConfirm: true };
-    currentUserId = data.user.id;
-    return { user: data.user };
-  } catch (e) { return { error: e.message }; }
-}
-
-async function authSignOut() {
-  if (supaEnabled && supabase) {
-    await supabase.auth.signOut().catch(() => {});
-  }
+function clearStoreCode() {
+  localStorage.removeItem('cprs_code');
   currentUserId = null;
+}
+
+async function checkStoreCode(code) {
+  if (!supaEnabled || !sbClient) return { valid: false, error: 'Koneksi Supabase belum siap. Coba refresh.' };
+  try {
+    const tout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
+    const req = sbClient.from('store_codes').select('code').eq('code', code).maybeSingle();
+    const { data, error } = await Promise.race([req, tout]);
+    if (error) return { valid: false, error: error.message };
+    return { valid: !!data };
+  } catch (e) {
+    return { valid: false, error: e.message === 'timeout' ? 'Koneksi timeout' : e.message };
+  }
 }
 
 // ─── Supabase helpers ────────────────────────────────────────────────────────
 
 async function sbUpsert(table, data) {
-  if (!supaEnabled || !supabase) return;
+  if (!supaEnabled || !sbClient) {
+    if (typeof toast === 'function') toast('Supabase belum siap', 'err');
+    return;
+  }
+  if (!currentUserId) {
+    if (typeof toast === 'function') toast('Kode toko belum diset', 'err');
+    return;
+  }
   try {
-    const { error } = await supabase.from(table).upsert(data, { onConflict: 'id' });
-    if (error) console.warn('[sync] upsert error', table, error.message);
+    const { error } = await sbClient.from(table).upsert(data, { onConflict: 'id' });
+    if (error) {
+      console.warn('[sync] upsert error', table, error);
+      if (typeof toast === 'function') toast('Sync gagal: ' + error.message, 'err');
+    }
   } catch (e) {
     console.warn('[sync] sbUpsert exception', e);
+    if (typeof toast === 'function') toast('Sync exception: ' + e.message, 'err');
   }
 }
 
-async function sbFetch(table) {
-  if (!supaEnabled || !supabase) return null;
+async function sbFetch(table, opts = {}) {
+  if (!supaEnabled || !sbClient) return null;
   try {
-    const { data, error } = await supabase
-      .from(table)
-      .select('*')
-      .eq('user_id', currentUserId);
+    let q = sbClient.from(table).select('*').eq('user_id', currentUserId);
+    if (opts.orderBy) q = q.order(opts.orderBy, { ascending: opts.ascending === true });
+    if (opts.limit) q = q.limit(opts.limit);
+    const { data, error } = await q;
     if (error) { console.warn('[sync] fetch error', table, error.message); return null; }
     return data;
   } catch (e) {
@@ -90,10 +93,38 @@ async function sbFetch(table) {
   }
 }
 
-async function sbDelete(table, id) {
-  if (!supaEnabled || !supabase) return;
+// Fetch ALL rows via pagination (PostgREST max-rows cap is per-request, usually 1000)
+async function sbFetchAll(table, opts = {}) {
+  if (!supaEnabled || !sbClient) return null;
+  const pageSize = 1000;
+  const all = [];
+  let from = 0;
   try {
-    const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', currentUserId);
+    while (true) {
+      let q = sbClient.from(table).select('*').eq('user_id', currentUserId);
+      if (opts.orderBy) q = q.order(opts.orderBy, { ascending: opts.ascending === true });
+      q = q.range(from, from + pageSize - 1);
+      const { data, error } = await q;
+      if (error) {
+        console.warn('[sync] fetchAll error', table, error.message);
+        return all.length ? all : null;
+      }
+      if (!data || data.length === 0) break;
+      all.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
+  } catch (e) {
+    console.warn('[sync] sbFetchAll exception', e);
+    return all.length ? all : null;
+  }
+}
+
+async function sbDelete(table, id) {
+  if (!supaEnabled || !sbClient) return;
+  try {
+    const { error } = await sbClient.from(table).delete().eq('id', id).eq('user_id', currentUserId);
     if (error) console.warn('[sync] delete error', table, error.message);
   } catch (e) {
     console.warn('[sync] sbDelete exception', e);
@@ -110,6 +141,10 @@ function buildSettingsRow() {
     store_addr: storeAddr,
     store_wa: storeWa,
     store_footer: storeFooter,
+    store_logo: storeLogo,
+    store_logo_bw: storeLogoBW,
+    printer_width: printerWidth,
+    receipt_link: receiptLink,
     owner_pwd: ownerPwd,
     menu_items: JSON.stringify(menuItems),
     menu_cats: JSON.stringify(menuCats),
@@ -135,6 +170,10 @@ function _applySettings(s) {
   if (s.store_addr !== undefined) storeAddr = s.store_addr;
   if (s.store_wa !== undefined) storeWa = s.store_wa;
   if (s.store_footer !== undefined) storeFooter = s.store_footer;
+  if (s.store_logo !== undefined) storeLogo = s.store_logo || '';
+  if (s.store_logo_bw !== undefined) storeLogoBW = s.store_logo_bw || '';
+  if (s.printer_width !== undefined && s.printer_width) printerWidth = String(s.printer_width);
+  if (s.receipt_link !== undefined) receiptLink = s.receipt_link || '';
   if (s.owner_pwd !== undefined) ownerPwd = s.owner_pwd;
   if (s.menu_items) {
     try { menuItems = JSON.parse(s.menu_items); } catch (e) { menuItems = []; }
@@ -223,15 +262,29 @@ function orderToRow(o) {
   };
 }
 
+// localStorage caches recent entries only; Supabase is source of truth for full history.
+// Caps keep quota safe (~5MB per origin) as orders accumulate.
+const LOCAL_ORDERS_CAP = 2000;
+const LOCAL_KAS_CAP = 2000;
+
+function _safeSetItem(key, value, fallbackSlice) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.warn('[sync] localStorage quota exceeded for', key, '— retrying with smaller slice');
+    try { localStorage.setItem(key, fallbackSlice); }
+    catch (e2) { console.warn('[sync] localStorage second attempt failed for', key, e2); }
+  }
+}
+
 function syncOrder(o) {
-  // Save all orders to localStorage
-  localStorage.setItem('cprs_orders', JSON.stringify(orders));
-  // Optionally push to Supabase
+  syncAllOrders();
   sbUpsert('orders', orderToRow(o));
 }
 
 function syncAllOrders() {
-  localStorage.setItem('cprs_orders', JSON.stringify(orders));
+  const slice = orders.slice(0, LOCAL_ORDERS_CAP);
+  _safeSetItem('cprs_orders', JSON.stringify(slice), JSON.stringify(orders.slice(0, 500)));
 }
 
 // ─── Kas ─────────────────────────────────────────────────────────────────────
@@ -251,12 +304,13 @@ function kasToRow(l) {
 }
 
 function syncKas(l) {
-  localStorage.setItem('cprs_kas', JSON.stringify(kasLog));
+  syncAllKas();
   sbUpsert('kas_log', kasToRow(l));
 }
 
 function syncAllKas() {
-  localStorage.setItem('cprs_kas', JSON.stringify(kasLog));
+  const slice = kasLog.slice(0, LOCAL_KAS_CAP);
+  _safeSetItem('cprs_kas', JSON.stringify(slice), JSON.stringify(kasLog.slice(0, 500)));
 }
 
 // ─── Supabase full load ───────────────────────────────────────────────────────
@@ -270,8 +324,8 @@ async function supaLoadAll() {
     _applySettings(settingsRows[0]);
   }
 
-  // Load orders
-  const orderRows = await sbFetch('orders');
+  // Load ALL orders (paginated) so Report page has full historical access
+  const orderRows = await sbFetchAll('orders', { orderBy: 'iso_date', ascending: false });
   if (orderRows && orderRows.length > 0) {
     orders = orderRows.map(r => ({
       id: r.id,
@@ -294,8 +348,8 @@ async function supaLoadAll() {
     syncAllOrders();
   }
 
-  // Load kas
-  const kasRows = await sbFetch('kas_log');
+  // Load ALL kas (paginated) so Report / Kas page has full historical access
+  const kasRows = await sbFetchAll('kas_log', { orderBy: 'date', ascending: false });
   if (kasRows && kasRows.length > 0) {
     kasLog = kasRows.map(r => ({
       id: r.id,

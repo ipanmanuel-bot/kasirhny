@@ -25,19 +25,27 @@ let storeName = 'KasirHnY';
 let storeAddr = '';
 let storeWa = '';
 let storeFooter = 'Terima kasih telah berkunjung!';
+let storeLogo = '';       // original uploaded image (data URL)
+let storeLogoBW = '';     // auto-converted black & white PNG (data URL)
+let printerWidth = '80';  // '55' or '80' (mm)
+let receiptLink = '';     // e-receipt / feedback link printed at bottom
 
 // UI State
 let curPage = 'dashboard';
-let dashPeriod = 'today';
-let ordFilterStatus = '';
-let ordFilterPay = '';
-let ordDateFilter = 'today';
-let kasDateFilter = 'today';
+// Period state per page: { mode: 'day'|'week'|'month', offset: number }
+// offset = 0 → current, -1 → previous, +1 → next (future is disabled)
+let dashPS = { mode: 'day', offset: 0 };
+let ordPS = { mode: 'day', offset: 0 };
+let kasPS = { mode: 'day', offset: 0 };
+let repPS = { mode: 'day', offset: 0 };
+let repMenuSort = { key: 'qty', dir: 'desc' };
+let repMenuPage = 1;
 let ordPage = 1;
 
 // Menu management tabs
 let menuTab = 'menu'; // 'menu' | 'cat'
 let menuFilterCat = 'all';
+let menuSearch = '';
 
 // Edit states
 let editItemId = null;
@@ -109,17 +117,26 @@ async function hashSecret(s) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function _localYMD(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function isoToDate(iso) {
-  // Returns YYYY-MM-DD from ISO string
+  // Return YYYY-MM-DD in the user's LOCAL timezone.
+  // Slicing iso.slice(0,10) would give the UTC date, causing early-morning
+  // WIB (UTC+7) orders to fall on the previous day and disappear from
+  // "Hari Ini" filters.
   if (!iso) return '';
-  return iso.slice(0, 10);
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso).slice(0, 10);
+  return _localYMD(d);
 }
 
 function getWeekStart() {
   const d = new Date();
   const day = d.getDay(); // 0=sun
   d.setDate(d.getDate() - day);
-  return d.toISOString().slice(0, 10);
+  return _localYMD(d);
 }
 
 function getMonthStart() {
@@ -127,24 +144,112 @@ function getMonthStart() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
+// Resolve a period state { mode, offset } into { from, to, label } (both dates
+// inclusive, YYYY-MM-DD in local time).
+function resolvePeriod(ps) {
+  const now = new Date();
+  const mode = ps.mode || 'day';
+  const off = ps.offset || 0;
+  let from, to, label;
+
+  if (mode === 'day') {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + off);
+    from = to = _localYMD(d);
+    if (off === 0) label = 'Hari Ini';
+    else if (off === -1) label = 'Kemarin';
+    else if (off < 0 && off >= -6) label = Math.abs(off) + ' hari lalu';
+    else label = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  } else if (mode === 'week') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + (off * 7));
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    from = _localYMD(start);
+    to = _localYMD(end);
+    if (off === 0) label = 'Minggu Ini';
+    else if (off === -1) label = 'Minggu Lalu';
+    else {
+      const s = start.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+      const e = end.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+      label = s + ' - ' + e;
+    }
+  } else {
+    // month
+    const start = new Date(now.getFullYear(), now.getMonth() + off, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + off + 1, 0);
+    from = _localYMD(start);
+    to = _localYMD(end);
+    if (off === 0) label = 'Bulan Ini';
+    else if (off === -1) label = 'Bulan Lalu';
+    else label = start.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+  }
+  return { from, to, label };
+}
+
+function matchesPeriod(dateISO, ps) {
+  if (!dateISO) return false;
+  const { from, to } = resolvePeriod(ps);
+  return dateISO >= from && dateISO <= to;
+}
+
+// Render segmented mode picker + prev/next navigator into `containerId`.
+// `onChange` is called after any state mutation.
+function renderPeriodNav(containerId, ps, onChange) {
+  const el = g(containerId);
+  if (!el) return;
+  const { label } = resolvePeriod(ps);
+  const modes = [['day', 'Harian'], ['week', 'Mingguan'], ['month', 'Bulanan']];
+  const canForward = (ps.offset || 0) < 0;
+
+  el.innerHTML = `
+    <div class="pnav">
+      <div class="pnav-seg">
+        ${modes.map(([v, l]) =>
+          `<button type="button" class="pnav-seg-btn ${ps.mode === v ? 'on' : ''}" data-mode="${v}">${l}</button>`
+        ).join('')}
+      </div>
+      <div class="pnav-nav">
+        <button type="button" class="pnav-arrow" data-dir="-1" aria-label="Sebelumnya">&#x2039;</button>
+        <div class="pnav-label">${esc(label)}</div>
+        <button type="button" class="pnav-arrow" data-dir="1" ${canForward ? '' : 'disabled'} aria-label="Berikutnya">&#x203A;</button>
+      </div>
+    </div>
+  `;
+  el.querySelectorAll('.pnav-seg-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      if (ps.mode === b.dataset.mode) return;
+      ps.mode = b.dataset.mode;
+      ps.offset = 0;
+      onChange();
+    });
+  });
+  el.querySelectorAll('.pnav-arrow').forEach(b => {
+    b.addEventListener('click', () => {
+      if (b.disabled) return;
+      const dir = Number(b.dataset.dir);
+      if (dir > 0 && (ps.offset || 0) >= 0) return;
+      ps.offset = (ps.offset || 0) + dir;
+      onChange();
+    });
+  });
+}
+
 // ─── Seed Data ───────────────────────────────────────────────────────────────
 
 function seedData() {
   menuCats = [
-    { id: 'cat1', name: 'Makanan', emoji: '🍽', order: 1 },
-    { id: 'cat2', name: 'Minuman', emoji: '🥤', order: 2 },
-    { id: 'cat3', name: 'Dessert', emoji: '🍰', order: 3 }
+    { id: 'cat1', name: 'Makanan', order: 1 },
+    { id: 'cat2', name: 'Minuman', order: 2 },
+    { id: 'cat3', name: 'Dessert', order: 3 }
   ];
   menuItems = [
-    { id: 'mn1', name: 'Nasi Goreng', price: 25000, catId: 'cat1', emoji: '🍳', desc: '', active: true },
-    { id: 'mn2', name: 'Ayam Bakar', price: 35000, catId: 'cat1', emoji: '🍗', desc: '', active: true },
-    { id: 'mn3', name: 'Mie Goreng', price: 22000, catId: 'cat1', emoji: '🍜', desc: '', active: true },
-    { id: 'mn4', name: 'Soto Ayam', price: 28000, catId: 'cat1', emoji: '🥣', desc: '', active: true },
-    { id: 'mn5', name: 'Es Teh Manis', price: 8000, catId: 'cat2', emoji: '🧋', desc: '', active: true },
-    { id: 'mn6', name: 'Kopi Hitam', price: 10000, catId: 'cat2', emoji: '☕', desc: '', active: true },
-    { id: 'mn7', name: 'Jus Jeruk', price: 15000, catId: 'cat2', emoji: '🍊', desc: '', active: true },
-    { id: 'mn8', name: 'Es Campur', price: 20000, catId: 'cat3', emoji: '🍧', desc: '', active: true },
-    { id: 'mn9', name: 'Puding', price: 12000, catId: 'cat3', emoji: '🍮', desc: '', active: true }
+    { id: 'mn1', name: 'Nasi Goreng', price: 25000, catId: 'cat1', desc: '', active: true },
+    { id: 'mn2', name: 'Ayam Bakar', price: 35000, catId: 'cat1', desc: '', active: true },
+    { id: 'mn3', name: 'Mie Goreng', price: 22000, catId: 'cat1', desc: '', active: true },
+    { id: 'mn4', name: 'Soto Ayam', price: 28000, catId: 'cat1', desc: '', active: true },
+    { id: 'mn5', name: 'Es Teh Manis', price: 8000, catId: 'cat2', desc: '', active: true },
+    { id: 'mn6', name: 'Kopi Hitam', price: 10000, catId: 'cat2', desc: '', active: true },
+    { id: 'mn7', name: 'Jus Jeruk', price: 15000, catId: 'cat2', desc: '', active: true },
+    { id: 'mn8', name: 'Es Campur', price: 20000, catId: 'cat3', desc: '', active: true },
+    { id: 'mn9', name: 'Puding', price: 12000, catId: 'cat3', desc: '', active: true }
   ];
   menuCtr = 10; catCtr = 4;
   promos = [{ id: 'pr1', name: 'Diskon Weekday', catId: 'all', discType: 'persen', discVal: 10, days: ['1', '2', '3', '4', '5'], from: '', to: '', active: true, note: '10% off setiap hari kerja' }];
@@ -165,95 +270,48 @@ function goLogin() {
 }
 
 function _hideAllScr() {
-  ['scr-email','scr-login','scr-opwd','scr-outlet','scr-staff','scr-pin'].forEach(id => {
+  ['scr-code','scr-login','scr-opwd','scr-outlet','scr-staff','scr-pin'].forEach(id => {
     const el = g(id); if (el) el.style.display = 'none';
   });
 }
 
-// ─── Email Auth ───────────────────────────────────────────────────────────────
+// ─── Kode Toko ────────────────────────────────────────────────────────────────
 
-function showEmailLogin() {
+function showCodeScreen() {
   g('app').style.display = 'none';
   _hideAllScr();
-  g('scr-email').style.display = 'flex';
-  showEmailSignin();
-  setTimeout(() => g('inp-email')?.focus(), 150);
+  const scr = g('scr-code'); if (scr) scr.style.display = 'flex';
+  setTimeout(() => g('inp-code')?.focus(), 150);
 }
 
-function showEmailSignin() {
-  g('scr-email-signin').style.display = '';
-  g('scr-email-signup').style.display = 'none';
-  _setEmailErr('');
-}
-
-function showEmailSignup() {
-  g('scr-email-signin').style.display = 'none';
-  g('scr-email-signup').style.display = '';
-  _setSignupErr('');
-  setTimeout(() => g('inp-reg-email')?.focus(), 100);
-}
-
-function _setEmailErr(msg) {
-  const el = g('scr-email-err');
-  if (!el) return;
+function _setCodeErr(msg) {
+  const el = g('scr-code-err'); if (!el) return;
   el.textContent = msg; el.style.display = msg ? '' : 'none';
 }
 
-function _setSignupErr(msg) {
-  const el = g('scr-signup-err');
-  if (!el) return;
-  el.textContent = msg; el.style.display = msg ? '' : 'none';
-}
-
-function _setBtnLoading(id, loading, label) {
-  const btn = g(id); if (!btn) return;
-  btn.disabled = loading;
-  btn.textContent = loading ? 'Memuat...' : label;
-}
-
-async function doEmailLogin() {
-  const email = g('inp-email')?.value.trim();
-  const pwd = g('inp-epwd')?.value;
-  _setEmailErr('');
-  if (!email || !pwd) { _setEmailErr('Isi email dan kata sandi'); return; }
-  _setBtnLoading('btn-email-login', true, 'Masuk');
-  const res = await authSignIn(email, pwd);
-  _setBtnLoading('btn-email-login', false, 'Masuk');
-  if (res.error) { _setEmailErr(res.error); return; }
-  // Auth berhasil — muat data lalu tampilkan role picker
-  loadLocalSettings();
-  await supaLoadAll();
-  goLogin();
-}
-
-async function doEmailSignup() {
-  const email = g('inp-reg-email')?.value.trim();
-  const pwd = g('inp-reg-pwd')?.value;
-  const pwd2 = g('inp-reg-pwd2')?.value;
-  _setSignupErr('');
-  if (!email || !pwd) { _setSignupErr('Isi semua kolom'); return; }
-  if (pwd.length < 6) { _setSignupErr('Kata sandi minimal 6 karakter'); return; }
-  if (pwd !== pwd2) { _setSignupErr('Kata sandi tidak cocok'); return; }
-  _setBtnLoading('btn-email-signup', true, 'Daftar & Masuk');
-  const res = await authSignUp(email, pwd);
-  _setBtnLoading('btn-email-signup', false, 'Daftar & Masuk');
-  if (res.error) { _setSignupErr(res.error); return; }
-  if (res.needConfirm) {
-    _setSignupErr('');
-    g('scr-signup-err').style.display = '';
-    g('scr-signup-err').style.color = '#34d399';
-    g('scr-signup-err').textContent = 'Cek email kamu untuk konfirmasi, lalu masuk kembali.';
+async function doEnterCode() {
+  const code = (g('inp-code')?.value || '').trim().toUpperCase();
+  if (!code || code.length < 4) { _setCodeErr('Kode minimal 4 karakter'); return; }
+  const btn = document.querySelector('#scr-code button.scr-btn');
+  const origLabel = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Memverifikasi...'; }
+  _setCodeErr('');
+  const res = await checkStoreCode(code);
+  if (btn) { btn.disabled = false; btn.textContent = origLabel || 'Masuk'; }
+  if (!res.valid) {
+    _setCodeErr(res.error || 'Kode toko tidak valid. Hubungi admin untuk mendapatkan kode.');
     return;
   }
+  saveStoreCode(code);
   loadLocalSettings();
-  await supaLoadAll();
+  supaLoadAll().catch(() => {});
   goLogin();
 }
 
-async function doLogout() {
+function doLogout() {
   curRole = null; curStaff = null;
-  await authSignOut();
-  showEmailLogin();
+  clearStoreCode();
+  showCodeScreen();
 }
 
 function goOwnerLogin() {
@@ -372,8 +430,23 @@ function _launchApp() {
   _hideAllScr();
   g('app').style.display = 'flex';
   _updateUserBadge();
-  goPage('dashboard');
+  _applyRoleAccess();
+  // Karyawan langsung ke POS, owner ke dashboard
+  goPage(curRole === 'staff' ? 'pos' : 'dashboard');
   if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function _applyRoleAccess() {
+  const isStaff = curRole === 'staff';
+  // Toggle class di body untuk mobile CSS
+  document.body.classList.toggle('is-staff', isStaff);
+  // Nav item yang boleh diakses karyawan (POS, Dashboard, Pesanan, Laporan)
+  const staffAllowed = ['pos', 'dashboard', 'orders', 'report'];
+  document.querySelectorAll('#sbnav .ni').forEach(el => {
+    const page = el.getAttribute('data-page');
+    if (!page) return;
+    el.style.display = (isStaff && !staffAllowed.includes(page)) ? 'none' : '';
+  });
 }
 
 function _updateUserBadge() {
@@ -403,14 +476,12 @@ function goPage(page, btn) {
   // Sync sidebar nav
   document.querySelectorAll('.ni').forEach(n => n.classList.remove('on'));
   document.querySelectorAll(`.ni[data-page="${page}"]`).forEach(n => n.classList.add('on'));
-  // Sync bottom nav
-  document.querySelectorAll('.bnav-item').forEach(n => n.classList.remove('on'));
-  document.querySelectorAll(`.bnav-item[data-page="${page}"]`).forEach(n => n.classList.add('on'));
   // Close sidebar on mobile after navigation
   closeSidebar();
   const renders = {
     dashboard: refreshDash, orders: renderOrders, kas: renderKas,
-    menu: renderMenuPage, promo: renderPromo, settings: renderSettings, pos: renderPOS
+    menu: renderMenuPage, promo: renderPromo, settings: renderSettings, pos: renderPOS,
+    report: renderReport
   };
   if (renders[page]) renders[page]();
 }
@@ -432,23 +503,26 @@ function closeSidebar() {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function refreshDash() {
+  renderPeriodNav('dash-period-nav', dashPS, refreshDash);
+
   // Header date
   const dateEl = g('dash-date');
   if (dateEl) {
-    const periodLabel = {today:'Hari Ini', week:'Minggu Ini', month:'Bulan Ini'}[dashPeriod] || '';
-    dateEl.textContent = periodLabel + ' · ' + new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+    const lbl = resolvePeriod(dashPS).label;
+    dateEl.textContent = lbl + ' · ' + new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
   }
 
   const ords = _ordersInPeriod();
   const revenue = ords.filter(o => o.payStatus === 'Lunas').reduce((s, o) => s + (o.total || 0), 0);
   const count = ords.length;
   const avg = count > 0 ? Math.round(revenue / count) : 0;
+  const itemsSold = ords.reduce((s, o) => s + (o.items || []).reduce((n, it) => n + (it.qty || 0), 0), 0);
 
   const se = (id, v) => { const el = g(id); if (el) el.textContent = v; };
   se('d-revenue', fmt(revenue));
   const sub = g('d-revenue-sub');
   if (sub) sub.textContent = count + ' pesanan · rata-rata ' + fmt(avg);
-  se('d-count', count);
+  se('d-count', itemsSold);
 
   // Payment breakdown
   const tunai = ords.filter(o => o.payMethod === 'Tunai').reduce((s, o) => s + o.total, 0);
@@ -458,41 +532,16 @@ function refreshDash() {
 
   // Top items
   const top = _topItems(ords);
-  // Inline badge (cell di grid)
+  // Inline badge (cell di grid stat "Menu Terlaris")
   const inlineEl = g('d-top-item-inline');
   if (inlineEl) inlineEl.textContent = top.length ? top[0].name + ' (' + top[0].qty + 'x)' : '—';
-  // List lengkap
-  const topEl = g('d-top-items');
-  if (topEl) {
-    if (!top.length) {
-      topEl.innerHTML = '<p style="color:var(--t3);font-size:13px;text-align:center;padding:8px 0">Belum ada data</p>';
-    } else {
-      topEl.innerHTML = top.map((item, i) =>
-        `<div class="top-item-row">
-          <span class="top-rank">${i + 1}</span>
-          <span class="top-name">${esc(item.name)}</span>
-          <span class="top-qty">${item.qty}x</span>
-          <span class="top-rev">${fmt(item.rev)}</span>
-        </div>`
-      ).join('');
-    }
-  }
 
   // Chart
   _renderDashChart(ords);
 }
 
 function _ordersInPeriod() {
-  const today = todayISO();
-  const weekStart = getWeekStart();
-  const monthStart = getMonthStart();
-  return orders.filter(o => {
-    const d = isoToDate(o.isoDate) || o.date;
-    if (dashPeriod === 'today') return d === today;
-    if (dashPeriod === 'week') return d >= weekStart;
-    if (dashPeriod === 'month') return d >= monthStart;
-    return true;
-  });
+  return orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || o.date, dashPS));
 }
 
 function _topItems(ords) {
@@ -517,7 +566,7 @@ function _renderDashChart(ords) {
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = _localYMD(d);
     const label = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
     const rev = orders
       .filter(o => isoToDate(o.isoDate) === iso && o.payStatus === 'Lunas')
@@ -553,36 +602,20 @@ function _renderDashChart(ords) {
   });
 }
 
-function setDashPeriod(p) {
-  dashPeriod = p;
-  document.querySelectorAll('.dtab-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('dp-' + p);
-  if (btn) btn.classList.add('on');
-  refreshDash();
-}
 
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
 function renderOrders() {
-  const today = todayISO();
-  const weekStart = getWeekStart();
-  const monthStart = getMonthStart();
+  renderPeriodNav('ord-period-nav', ordPS, () => { ordPage = 1; renderOrders(); });
 
-  let filtered = orders.filter(o => {
-    const d = isoToDate(o.isoDate) || '';
-    if (ordDateFilter === 'today') { if (d !== today) return false; }
-    else if (ordDateFilter === 'week') { if (d < weekStart) return false; }
-    else if (ordDateFilter === 'month') { if (d < monthStart) return false; }
-    if (ordFilterStatus && o.status !== ordFilterStatus) return false;
-    if (ordFilterPay && o.payStatus !== ordFilterPay) return false;
-    return true;
-  });
+  let filtered = orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || '', ordPS));
 
+  const perPage = 10;
   const total = filtered.length;
-  const pages = Math.ceil(total / 15) || 1;
+  const pages = Math.ceil(total / perPage) || 1;
   if (ordPage > pages) ordPage = pages;
 
-  const paginated = filtered.slice((ordPage - 1) * 15, ordPage * 15);
+  const paginated = filtered.slice((ordPage - 1) * perPage, ordPage * perPage);
 
   const el = g('orders-list');
   if (!el) return;
@@ -590,22 +623,28 @@ function renderOrders() {
   if (!paginated.length) {
     el.innerHTML = '<div class="empty-state"><p>Belum ada pesanan</p></div>';
   } else {
-    el.innerHTML = paginated.map(o => `
-      <div class="order-card" onclick="openOrderDetail('${esc(o.id)}')">
-        <div class="order-card-header">
-          <span class="order-id">${esc(o.id)}</span>
-          <span class="badge ${o.status === 'Selesai' ? 'badge-gr' : 'badge-am'}">${esc(o.status)}</span>
+    el.innerHTML = paginated.map(o => {
+      const timePart = o.isoDate
+        ? new Date(o.isoDate).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        : '';
+      const dateStr = esc(o.date) + (timePart ? ' · ' + esc(timePart) : '');
+      const pay = esc(o.payMethod || '-');
+      const badgeClass = o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re';
+      const badgeText = esc(o.payStatus);
+      return `
+        <div class="order-card" onclick="openOrderDetail('${esc(o.id)}')">
+          <span class="oc-id">${esc(o.id)}</span>
+          <span class="oc-date">${dateStr}</span>
+          <span class="oc-pay">${pay}</span>
+          <span class="badge ${badgeClass} oc-status">${badgeText}</span>
+          <span class="oc-total">${fmt(o.total)}</span>
+          <span class="oc-meta-mob">
+            <span>${dateStr}</span> &bull; <span>${pay}</span> &bull;
+            <span class="badge ${badgeClass}">${badgeText}</span>
+          </span>
         </div>
-        <div class="order-card-body">
-          <span class="order-meta">${esc(o.date)}${o.custName ? ' &bull; ' + esc(o.custName) : ''}${o.tableNo ? ' &bull; Meja ' + esc(o.tableNo) : ''}</span>
-          <span class="order-total">${fmt(o.total)}</span>
-        </div>
-        <div class="order-card-footer">
-          <span class="badge ${o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re'}">${esc(o.payStatus)}</span>
-          <span class="order-pay-method">${esc(o.payMethod)}</span>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
   // Pagination
@@ -630,32 +669,6 @@ function renderOrders() {
 }
 
 function ordGo(p) { ordPage = p; renderOrders(); }
-
-function setOrdDateFilter(v) {
-  ordDateFilter = v;
-  ordPage = 1;
-  document.querySelectorAll('.ord-date-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('odf-' + v);
-  if (btn) btn.classList.add('on');
-  renderOrders();
-}
-
-function setOrdFilter(type, val) {
-  if (type === 'status') { ordFilterStatus = ordFilterStatus === val ? '' : val; }
-  if (type === 'pay') { ordFilterPay = ordFilterPay === val ? '' : val; }
-  ordPage = 1;
-  _updateOrdFilterBtns();
-  renderOrders();
-}
-
-function _updateOrdFilterBtns() {
-  document.querySelectorAll('.ord-filter-btn[data-type="status"]').forEach(b => {
-    b.classList.toggle('on', b.dataset.val === ordFilterStatus);
-  });
-  document.querySelectorAll('.ord-filter-btn[data-type="pay"]').forEach(b => {
-    b.classList.toggle('on', b.dataset.val === ordFilterPay);
-  });
-}
 
 function openOrderDetail(id) {
   const o = orders.find(x => x.id === id);
@@ -689,25 +702,49 @@ function openOrderDetail(id) {
     </div>
     <div class="detail-actions">
       <div class="detail-badges">
-        <span class="badge ${o.status === 'Selesai' ? 'badge-gr' : 'badge-am'}">${esc(o.status)}</span>
         <span class="badge ${o.payStatus === 'Lunas' ? 'badge-gr' : 'badge-re'}">${esc(o.payStatus)}</span>
       </div>
       <div class="detail-btns">
-        ${o.status !== 'Selesai' ? `<button class="btn btn-sm btn-sec" onclick="setOrderStatus('${esc(o.id)}','Selesai');closeModal('m-order-detail')">Tandai Selesai</button>` : ''}
         ${o.payStatus !== 'Lunas' ? `<button class="btn btn-sm btn-p" onclick="setOrderPayStatus('${esc(o.id)}','Lunas');closeModal('m-order-detail')">Tandai Lunas</button>` : ''}
+        <button class="btn btn-sm btn-p" onclick="closeModal('m-order-detail');openOrderReceipt(orders.find(x=>x.id==='${esc(o.id)}'))">
+          <i data-lucide="printer" style="width:14px;height:14px"></i> Cetak Struk
+        </button>
+        <button class="btn btn-sm btn-danger" onclick="deleteOrder('${esc(o.id)}')">
+          <i data-lucide="trash-2" style="width:14px;height:14px"></i> Hapus Pesanan
+        </button>
       </div>
     </div>
   `;
   openModal('m-order-detail');
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function setOrderStatus(id, status) {
+function deleteOrder(id) {
   const o = orders.find(x => x.id === id);
   if (!o) return;
-  o.status = status;
-  syncOrder(o);
-  toast('Status diperbarui: ' + status);
+  if (!confirm('Hapus pesanan ' + id + '? Entri kas terkait juga akan dihapus.')) return;
+
+  // Remove from local state + persist
+  orders = orders.filter(x => x.id !== id);
+  syncAllOrders();
+  if (typeof sbDelete === 'function') sbDelete('orders', id);
+
+  // Also remove auto-generated kas entries linked to this order
+  const kasTag = 'Penjualan - ' + id;
+  const kasToDelete = kasLog.filter(k => k.desc === kasTag);
+  if (kasToDelete.length) {
+    kasLog = kasLog.filter(k => k.desc !== kasTag);
+    syncAllKas();
+    if (typeof sbDelete === 'function') {
+      kasToDelete.forEach(k => sbDelete('kas_log', k.id));
+    }
+  }
+
+  closeModal('m-order-detail');
+  toast('Pesanan dihapus');
   renderOrders();
+  if (curPage === 'kas' && typeof renderKas === 'function') renderKas();
+  if (curPage === 'dashboard' && typeof refreshDash === 'function') refreshDash();
 }
 
 function setOrderPayStatus(id, ps) {
@@ -738,17 +775,9 @@ function setOrderPayStatus(id, ps) {
 // ─── Kas ──────────────────────────────────────────────────────────────────────
 
 function renderKas() {
-  const today = todayISO();
-  const weekStart = getWeekStart();
-  const monthStart = getMonthStart();
+  renderPeriodNav('kas-period-nav', kasPS, renderKas);
 
-  let filtered = kasLog.filter(l => {
-    const d = l.date || '';
-    if (kasDateFilter === 'today') return d === today;
-    if (kasDateFilter === 'week') return d >= weekStart;
-    if (kasDateFilter === 'month') return d >= monthStart;
-    return true;
-  });
+  let filtered = kasLog.filter(l => matchesPeriod(l.date || '', kasPS));
 
   const totalIn = filtered.filter(l => l.type === 'in').reduce((s, l) => s + (l.amount || 0), 0);
   const totalOut = filtered.filter(l => l.type === 'out').reduce((s, l) => s + (l.amount || 0), 0);
@@ -799,14 +828,6 @@ function renderKas() {
       </div>
     `;
   }).join('');
-}
-
-function setKasDateFilter(v) {
-  kasDateFilter = v;
-  document.querySelectorAll('.kas-date-btn').forEach(b => b.classList.remove('on'));
-  const btn = g('kdf-' + v);
-  if (btn) btn.classList.add('on');
-  renderKas();
 }
 
 function openKasTambah(type) {
@@ -907,6 +928,7 @@ function openAddPromo() {
   g('promo-buy-qty').value = '2';
   g('promo-free-qty').value = '1';
   _bgBuyType = 'item';
+  _bgFreeType = 'item';
   document.querySelectorAll('.promo-day-cb').forEach(cb => cb.checked = false);
   g('m-promo-title').textContent = 'Tambah Promo';
   _buildPromoCatOptions();
@@ -934,15 +956,21 @@ function openEditPromo(id) {
   onPromoDiscTypeChange();
   if (p.discType === 'beli_gratis') {
     _bgBuyType = p.buyType || 'item';
+    _bgFreeType = p.freeType || 'item';
     _rebuildPromoItemSelects();
     setTimeout(() => {
       _setBuyType(_bgBuyType);
+      _setFreeType(_bgFreeType);
       if (_bgBuyType === 'cat') {
         if (p.buyCatId && g('promo-buy-cat')) g('promo-buy-cat').value = p.buyCatId;
       } else {
         if (p.buyItemId && g('promo-buy-item')) g('promo-buy-item').value = p.buyItemId;
       }
-      if (p.freeItemId && g('promo-free-item')) g('promo-free-item').value = p.freeItemId;
+      if (_bgFreeType === 'cat') {
+        if (p.freeCatId && g('promo-free-cat')) g('promo-free-cat').value = p.freeCatId;
+      } else {
+        if (p.freeItemId && g('promo-free-item')) g('promo-free-item').value = p.freeItemId;
+      }
       _updatePromoBeliGratisPreview();
     }, 0);
   }
@@ -969,7 +997,8 @@ function onPromoDiscTypeChange() {
   if (isBG) _rebuildPromoItemSelects();
 }
 
-let _bgBuyType = 'item'; // 'item' | 'cat'
+let _bgBuyType = 'item';  // 'item' | 'cat'
+let _bgFreeType = 'item'; // 'item' | 'cat'
 
 function _setBuyType(type) {
   _bgBuyType = type;
@@ -981,21 +1010,30 @@ function _setBuyType(type) {
   _updatePromoBeliGratisPreview();
 }
 
+function _setFreeType(type) {
+  _bgFreeType = type;
+  g('bg-ftype-item')?.classList.toggle('on', type === 'item');
+  g('bg-ftype-cat')?.classList.toggle('on', type === 'cat');
+  const iw = g('bg-free-item-wrap'), cw = g('bg-free-cat-wrap');
+  if (iw) iw.style.display = type === 'item' ? '' : 'none';
+  if (cw) cw.style.display = type === 'cat' ? '' : 'none';
+  _updatePromoBeliGratisPreview();
+}
+
 function _rebuildPromoItemSelects() {
   const itemOpts = menuItems.filter(m => m.active !== false)
-    .map(m => `<option value="${esc(m.id)}">${esc((m.emoji||'') + ' ' + m.name)}</option>`)
+    .map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`)
     .join('');
   ['promo-buy-item','promo-free-item'].forEach(id => { const el = g(id); if (el) el.innerHTML = itemOpts; });
-  const catOpts = menuCats.map(c => `<option value="${esc(c.id)}">${esc((c.emoji||'') + ' ' + c.name)}</option>`).join('');
-  const catSel = g('promo-buy-cat'); if (catSel) catSel.innerHTML = catOpts;
+  const catOpts = menuCats.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  ['promo-buy-cat','promo-free-cat'].forEach(id => { const el = g(id); if (el) el.innerHTML = catOpts; });
   _updatePromoBeliGratisPreview();
 }
 
 function _updatePromoBeliGratisPreview() {
-  const fi = menuItems.find(m => m.id === g('promo-free-item')?.value);
   const bq = parseInt(g('promo-buy-qty')?.value) || 1;
   const fq = parseInt(g('promo-free-qty')?.value) || 1;
-  let buyLabel = '';
+  let buyLabel = '', freeLabel = '';
   if (_bgBuyType === 'cat') {
     const cat = menuCats.find(c => c.id === g('promo-buy-cat')?.value);
     buyLabel = cat ? `${bq}x item ${cat.name}` : '';
@@ -1003,8 +1041,15 @@ function _updatePromoBeliGratisPreview() {
     const bi = menuItems.find(m => m.id === g('promo-buy-item')?.value);
     buyLabel = bi ? `${bq}x ${bi.name}` : '';
   }
+  if (_bgFreeType === 'cat') {
+    const cat = menuCats.find(c => c.id === g('promo-free-cat')?.value);
+    freeLabel = cat ? `${fq}x item ${cat.name}` : '';
+  } else {
+    const fi = menuItems.find(m => m.id === g('promo-free-item')?.value);
+    freeLabel = fi ? `${fq}x ${fi.name}` : '';
+  }
   const prev = g('promo-bg-preview');
-  if (prev) prev.textContent = buyLabel && fi ? `Beli ${buyLabel} → Gratis ${fq}x ${fi.name}` : '';
+  if (prev) prev.textContent = buyLabel && freeLabel ? `Beli ${buyLabel} → Gratis ${freeLabel}` : '';
 }
 
 function savePromo() {
@@ -1021,17 +1066,30 @@ function savePromo() {
   if (discType === 'beli_gratis') {
     const buyQty = parseInt(g('promo-buy-qty')?.value) || 1;
     const freeQty = parseInt(g('promo-free-qty')?.value) || 1;
-    const freeItemId = g('promo-free-item')?.value;
-    if (!freeItemId) { toast('Pilih item gratis', 'err'); return; }
+    const base = { name, discType, buyQty, freeQty, catId:'all', discVal:0, days, from, to, note };
+
+    // Buy side
     if (_bgBuyType === 'cat') {
       const buyCatId = g('promo-buy-cat')?.value;
       if (!buyCatId) { toast('Pilih kategori pembelian', 'err'); return; }
-      promoData = { name, discType, buyType:'cat', buyCatId, buyQty, freeItemId, freeQty, catId:'all', discVal:0, days, from, to, note };
+      base.buyType = 'cat'; base.buyCatId = buyCatId;
     } else {
       const buyItemId = g('promo-buy-item')?.value;
       if (!buyItemId) { toast('Pilih item yang dibeli', 'err'); return; }
-      promoData = { name, discType, buyType:'item', buyItemId, buyQty, freeItemId, freeQty, catId:'all', discVal:0, days, from, to, note };
+      base.buyType = 'item'; base.buyItemId = buyItemId;
     }
+
+    // Free side
+    if (_bgFreeType === 'cat') {
+      const freeCatId = g('promo-free-cat')?.value;
+      if (!freeCatId) { toast('Pilih kategori gratis', 'err'); return; }
+      base.freeType = 'cat'; base.freeCatId = freeCatId;
+    } else {
+      const freeItemId = g('promo-free-item')?.value;
+      if (!freeItemId) { toast('Pilih item gratis', 'err'); return; }
+      base.freeType = 'item'; base.freeItemId = freeItemId;
+    }
+    promoData = base;
   } else {
     const catId = g('promo-cat').value;
     const discVal = parseFloat(g('promo-disc-val').value) || 0;
@@ -1093,44 +1151,275 @@ function calcPromoDisc(p, subtotal) {
 }
 
 function calcBeliGratisDisc(promo, cart) {
-  const freeItem = cart.find(c => c.id === promo.freeItemId);
-  if (!freeItem) return 0;
+  const getMatchIds = (type, itemId, catId) => {
+    if (type === 'cat') return menuItems.filter(m => m.catId === catId).map(m => m.id);
+    return itemId ? [itemId] : [];
+  };
+  const buyIds  = getMatchIds(promo.buyType,  promo.buyItemId,  promo.buyCatId);
+  const freeIds = getMatchIds(promo.freeType || 'item', promo.freeItemId, promo.freeCatId);
+  if (!buyIds.length || !freeIds.length) return 0;
 
-  let totalBuyQty = 0;
-  if (promo.buyType === 'cat') {
-    // Hitung total qty semua item dalam kategori tertentu di cart
-    const catItems = menuItems.filter(m => m.catId === promo.buyCatId).map(m => m.id);
-    totalBuyQty = cart.filter(c => catItems.includes(c.id)).reduce((s, c) => s + c.qty, 0);
-  } else {
-    // Item spesifik
-    if (promo.freeItemId === promo.buyItemId) {
-      // Item sama: hitung per set (buyQty + freeQty)
-      const buyItem = cart.find(c => c.id === promo.buyItemId);
-      if (!buyItem) return 0;
-      const sets = Math.floor(buyItem.qty / (promo.buyQty + promo.freeQty));
-      return sets * promo.freeQty * buyItem.price;
-    }
-    const buyItem = cart.find(c => c.id === promo.buyItemId);
-    totalBuyQty = buyItem?.qty || 0;
-  }
+  const buyItems  = cart.filter(c => buyIds.includes(c.id));
+  const freeItems = cart.filter(c => freeIds.includes(c.id));
 
+  const totalBuyQty = buyItems.reduce((s, c) => s + c.qty, 0);
   if (totalBuyQty < promo.buyQty) return 0;
-  const sets = Math.floor(totalBuyQty / promo.buyQty);
-  const freeCount = Math.min(sets * promo.freeQty, freeItem.qty);
-  return freeCount * freeItem.price;
+
+  // Cek overlap: apakah buy dan free dari pool item yang sama?
+  const overlap = buyIds.some(id => freeIds.includes(id));
+
+  let sets;
+  if (overlap) {
+    // Pool sama → 1 set = (buyQty + freeQty) unit
+    sets = Math.floor(totalBuyQty / (promo.buyQty + promo.freeQty));
+  } else {
+    // Pool beda → sets berdasarkan buy saja
+    sets = Math.floor(totalBuyQty / promo.buyQty);
+  }
+  const maxFree = sets * promo.freeQty;
+  if (maxFree <= 0) return 0;
+
+  // Kumpulkan unit item free, urut termurah dulu (customer dapat yang termurah gratis)
+  const freeUnits = [];
+  freeItems.forEach(c => { for (let i = 0; i < c.qty; i++) freeUnits.push(c.price); });
+  freeUnits.sort((a, b) => a - b);
+
+  const actualFree = Math.min(maxFree, freeUnits.length);
+  let disc = 0;
+  for (let i = 0; i < actualFree; i++) disc += freeUnits[i];
+  return disc;
 }
 
 function _promoBeliGratisLabel(p) {
-  const fi = menuItems.find(m => m.id === p.freeItemId);
-  let buyLabel;
-  if (p.buyType === 'cat') {
-    const cat = menuCats.find(c => c.id === p.buyCatId);
-    buyLabel = `${p.buyQty}x item ${cat?.name || 'Kategori'}`;
+  const buyLabel = p.buyType === 'cat'
+    ? `${p.buyQty}x item ${menuCats.find(c => c.id === p.buyCatId)?.name || 'Kategori'}`
+    : `${p.buyQty}x ${menuItems.find(m => m.id === p.buyItemId)?.name || '?'}`;
+  const freeLabel = (p.freeType || 'item') === 'cat'
+    ? `${p.freeQty}x item ${menuCats.find(c => c.id === p.freeCatId)?.name || 'Kategori'}`
+    : `${p.freeQty}x ${menuItems.find(m => m.id === p.freeItemId)?.name || '?'}`;
+  return `Beli ${buyLabel} → Gratis ${freeLabel}`;
+}
+
+// ─── Laporan Produk Terjual ──────────────────────────────────────────────────
+
+function _reportData() {
+  const ords = orders.filter(o => matchesPeriod(isoToDate(o.isoDate) || o.date, repPS));
+
+  const byMenu = {};   // key = menu name (fallback if id missing) → { name, catId, qty, revenue }
+  const byCat = {};    // key = catId → { name, qty, revenue }
+  let totalItems = 0, totalRevenue = 0;
+
+  ords.forEach(o => {
+    (o.items || []).forEach(it => {
+      const qty = Number(it.qty) || 0;
+      const rev = Number(it.lineTotal) || 0;
+      totalItems += qty;
+      totalRevenue += rev;
+
+      // Resolve category from live menu (items are order-time snapshots without catId)
+      const menuRef = menuItems.find(m => m.id === it.id);
+      const catId = menuRef ? menuRef.catId : '_unknown';
+
+      const key = it.id || it.name;
+      if (!byMenu[key]) byMenu[key] = { name: it.name, catId, qty: 0, revenue: 0 };
+      byMenu[key].qty += qty;
+      byMenu[key].revenue += rev;
+
+      if (!byCat[catId]) {
+        const c = menuCats.find(x => x.id === catId);
+        byCat[catId] = { name: c ? c.name : 'Tanpa Kategori', qty: 0, revenue: 0 };
+      }
+      byCat[catId].qty += qty;
+      byCat[catId].revenue += rev;
+    });
+  });
+
+  return {
+    orders: ords,
+    orderCount: ords.length,
+    totalItems,
+    totalRevenue,
+    menus: Object.values(byMenu).sort((a, b) => b.qty - a.qty),
+    cats: Object.values(byCat).sort((a, b) => b.qty - a.qty)
+  };
+}
+
+// Sort a report menu row list by the given key/dir.
+function _sortMenus(menus, key, dir) {
+  const mult = dir === 'asc' ? 1 : -1;
+  const catNameFor = (cid) => cid === '_unknown' ? '' : (menuCats.find(c => c.id === cid)?.name || '');
+  const arr = menus.slice();
+  arr.sort((a, b) => {
+    let av, bv;
+    if (key === 'name') { av = a.name.toLowerCase(); bv = b.name.toLowerCase(); }
+    else if (key === 'cat') { av = catNameFor(a.catId).toLowerCase(); bv = catNameFor(b.catId).toLowerCase(); }
+    else if (key === 'qty') { av = a.qty; bv = b.qty; }
+    else { av = a.revenue; bv = b.revenue; }
+    if (av < bv) return -1 * mult;
+    if (av > bv) return 1 * mult;
+    return 0;
+  });
+  return arr;
+}
+
+// Toggle sort on a column: same key → flip direction; different key → default
+// desc for numeric, asc for text.
+function setRepMenuSort(key) {
+  if (repMenuSort.key === key) {
+    repMenuSort.dir = repMenuSort.dir === 'asc' ? 'desc' : 'asc';
   } else {
-    const bi = menuItems.find(m => m.id === p.buyItemId);
-    buyLabel = `${p.buyQty}x ${bi?.name || '?'}`;
+    repMenuSort.key = key;
+    repMenuSort.dir = (key === 'name' || key === 'cat') ? 'asc' : 'desc';
   }
-  return `Beli ${buyLabel} → Gratis ${p.freeQty}x ${fi?.name || '?'}`;
+  repMenuPage = 1;
+  renderReport();
+}
+
+function repMenuGo(p) { repMenuPage = p; renderReport(); }
+
+function _sortInd(key) {
+  const active = repMenuSort.key === key;
+  const arrow = !active ? '↕' : (repMenuSort.dir === 'asc' ? '↑' : '↓');
+  return `<span class="sort-ind">${arrow}</span>`;
+}
+
+function _sortClass(key) {
+  return 'sortable' + (repMenuSort.key === key ? ' sort-on' : '');
+}
+
+function renderReport() {
+  renderPeriodNav('rep-period-nav', repPS, renderReport);
+
+  const lbl = g('rep-period-label');
+  if (lbl) lbl.textContent = 'Periode: ' + resolvePeriod(repPS).label;
+
+  const data = _reportData();
+
+  // Category table (unsorted here — comes pre-sorted by qty desc from _reportData)
+  const catEl = g('rep-cat-table');
+  if (catEl) {
+    if (!data.cats.length) {
+      catEl.innerHTML = '<div class="rep-empty">Belum ada data</div>';
+    } else {
+      const rows = data.cats.map((c, i) =>
+        `<tr>
+          <td class="rank">${i + 1}</td>
+          <td>${esc(c.name)}</td>
+          <td class="num">${c.qty}</td>
+          <td class="num">${fmt(c.revenue)}</td>
+        </tr>`
+      ).join('');
+      catEl.innerHTML = `<table class="rep-tbl">
+        <thead><tr>
+          <th class="rank">#</th><th>Kategori</th>
+          <th class="num">Qty</th><th class="num">Pendapatan</th>
+        </tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row"><td colspan="2">TOTAL</td>
+            <td class="num">${data.totalItems}</td>
+            <td class="num">${fmt(data.totalRevenue)}</td></tr>
+        </tbody>
+      </table>`;
+    }
+  }
+
+  // Menu table — sortable + paginated (10/page)
+  const menuEl = g('rep-menu-table');
+  const pgEl = g('rep-menu-pagination');
+  if (menuEl) {
+    if (!data.menus.length) {
+      menuEl.innerHTML = '<div class="rep-empty">Belum ada penjualan pada periode ini</div>';
+      if (pgEl) pgEl.innerHTML = '';
+    } else {
+      const sorted = _sortMenus(data.menus, repMenuSort.key, repMenuSort.dir);
+      const perPage = 10;
+      const total = sorted.length;
+      const pages = Math.ceil(total / perPage) || 1;
+      if (repMenuPage > pages) repMenuPage = pages;
+      const startIdx = (repMenuPage - 1) * perPage;
+      const paginated = sorted.slice(startIdx, startIdx + perPage);
+
+      const rows = paginated.map((m, i) => {
+        const catName = m.catId === '_unknown'
+          ? '—'
+          : (menuCats.find(c => c.id === m.catId)?.name || '—');
+        return `<tr>
+          <td class="rank">${startIdx + i + 1}</td>
+          <td>${esc(m.name)}</td>
+          <td>${esc(catName)}</td>
+          <td class="num">${m.qty}</td>
+          <td class="num">${fmt(m.revenue)}</td>
+        </tr>`;
+      }).join('');
+
+      menuEl.innerHTML = `<table class="rep-tbl">
+        <thead><tr>
+          <th class="rank">#</th>
+          <th class="${_sortClass('name')}" onclick="setRepMenuSort('name')">Nama Menu ${_sortInd('name')}</th>
+          <th class="${_sortClass('cat')}" onclick="setRepMenuSort('cat')">Kategori ${_sortInd('cat')}</th>
+          <th class="num ${_sortClass('qty')}" onclick="setRepMenuSort('qty')">Qty ${_sortInd('qty')}</th>
+          <th class="num ${_sortClass('rev')}" onclick="setRepMenuSort('rev')">Pendapatan ${_sortInd('rev')}</th>
+        </tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row"><td colspan="3">TOTAL</td>
+            <td class="num">${data.totalItems}</td>
+            <td class="num">${fmt(data.totalRevenue)}</td></tr>
+        </tbody>
+      </table>`;
+
+      if (pgEl) {
+        if (pages <= 1) { pgEl.innerHTML = ''; }
+        else {
+          pgEl.innerHTML = `
+            <button class="pg-btn" onclick="repMenuGo(${repMenuPage - 1})" ${repMenuPage <= 1 ? 'disabled' : ''}>Sebelumnya</button>
+            <span class="pg-info">Hal ${repMenuPage} / ${pages} · ${total} menu</span>
+            <button class="pg-btn" onclick="repMenuGo(${repMenuPage + 1})" ${repMenuPage >= pages ? 'disabled' : ''}>Berikutnya</button>
+          `;
+        }
+      }
+    }
+  }
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function exportReportCSV(kind) {
+  const data = _reportData();
+  const rows = [];
+  const lbl = resolvePeriod(repPS).label;
+  const stamp = _localYMD(new Date());
+
+  if (kind === 'menu') {
+    rows.push(['#', 'Nama Menu', 'Kategori', 'Qty', 'Pendapatan']);
+    const sorted = _sortMenus(data.menus, repMenuSort.key, repMenuSort.dir);
+    sorted.forEach((m, i) => {
+      const catName = m.catId === '_unknown' ? '—' : (menuCats.find(c => c.id === m.catId)?.name || '—');
+      rows.push([i + 1, m.name, catName, m.qty, m.revenue]);
+    });
+    rows.push(['', 'TOTAL', '', data.totalItems, data.totalRevenue]);
+  } else {
+    rows.push(['#', 'Kategori', 'Qty', 'Pendapatan']);
+    data.cats.forEach((c, i) => rows.push([i + 1, c.name, c.qty, c.revenue]));
+    rows.push(['', 'TOTAL', data.totalItems, data.totalRevenue]);
+  }
+
+  const csv = rows.map(r =>
+    r.map(v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',')
+  ).join('\n');
+
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `laporan-${kind}-${stamp}-${(lbl || '').replace(/\s+/g, '_')}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('CSV diunduh');
 }
 
 // ─── Menu Management ─────────────────────────────────────────────────────────
@@ -1170,7 +1459,6 @@ function renderCatList() {
   }
   el.innerHTML = menuCats.map(c => `
     <div class="list-item">
-      <span class="list-item-emoji">${c.emoji || '📁'}</span>
       <span class="list-item-name">${esc(c.name)}</span>
       <div class="list-item-actions">
         <button class="icon-btn" onclick="openEditCat('${c.id}')"><i data-lucide="pencil" style="width:15px;height:15px"></i></button>
@@ -1179,6 +1467,11 @@ function renderCatList() {
     </div>
   `).join('');
   if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function onMenuSearch(val) {
+  menuSearch = (val || '').trim().toLowerCase();
+  renderMenuList();
 }
 
 function renderMenuList() {
@@ -1192,10 +1485,13 @@ function renderMenuList() {
       menuCats.map(c => `<button class="filter-btn ${menuFilterCat === c.id ? 'on' : ''}" onclick="setMenuCatFilter('${c.id}')">${esc(c.name)}</button>`).join('');
   }
 
-  const filtered = menuFilterCat === 'all' ? menuItems : menuItems.filter(m => m.catId === menuFilterCat);
+  let filtered = menuFilterCat === 'all' ? menuItems : menuItems.filter(m => m.catId === menuFilterCat);
+  if (menuSearch) {
+    filtered = filtered.filter(m => (m.name || '').toLowerCase().includes(menuSearch) || (m.desc || '').toLowerCase().includes(menuSearch));
+  }
 
   if (!filtered.length) {
-    el.innerHTML = '<div class="empty-state"><p>Belum ada menu</p></div>';
+    el.innerHTML = '<div class="empty-state"><p>' + (menuSearch ? 'Tidak ada menu cocok dengan pencarian' : 'Belum ada menu') + '</p></div>';
     return;
   }
 
@@ -1203,7 +1499,6 @@ function renderMenuList() {
     const cat = menuCats.find(c => c.id === m.catId);
     return `
       <div class="list-item ${m.active ? '' : 'item-inactive'}">
-        <span class="list-item-emoji">${m.emoji || '🍽'}</span>
         <div class="list-item-info">
           <span class="list-item-name">${esc(m.name)}</span>
           <span class="list-item-sub">${cat ? esc(cat.name) : ''} &bull; ${fmt(m.price)}</span>
@@ -1230,7 +1525,6 @@ function setMenuCatFilter(catId) {
 function openAddCat() {
   editCatId = null;
   g('cat-name').value = '';
-  g('cat-emoji').value = '';
   g('m-cat-title').textContent = 'Tambah Kategori';
   openModal('m-cat');
 }
@@ -1240,20 +1534,18 @@ function openEditCat(id) {
   if (!c) return;
   editCatId = id;
   g('cat-name').value = c.name;
-  g('cat-emoji').value = c.emoji || '';
   g('m-cat-title').textContent = 'Edit Kategori';
   openModal('m-cat');
 }
 
 function saveCat() {
   const name = g('cat-name').value.trim();
-  const emoji = g('cat-emoji').value.trim() || '📁';
   if (!name) { toast('Isi nama kategori', 'err'); return; }
   if (editCatId) {
     const c = menuCats.find(x => x.id === editCatId);
-    if (c) { c.name = name; c.emoji = emoji; }
+    if (c) { c.name = name; }
   } else {
-    menuCats.push({ id: 'cat' + catCtr++, name, emoji, order: menuCats.length + 1 });
+    menuCats.push({ id: 'cat' + catCtr++, name, order: menuCats.length + 1 });
   }
   syncSettings();
   closeModal('m-cat');
@@ -1275,7 +1567,6 @@ function openAddItem() {
   editItemId = null;
   g('item-name').value = '';
   g('item-price').value = '';
-  g('item-emoji').value = '';
   g('item-desc').value = '';
   g('m-item-title').textContent = 'Tambah Menu';
   _buildItemCatOptions();
@@ -1288,7 +1579,6 @@ function openEditItem(id) {
   editItemId = id;
   g('item-name').value = m.name;
   g('item-price').value = m.price;
-  g('item-emoji').value = m.emoji || '';
   g('item-desc').value = m.desc || '';
   g('m-item-title').textContent = 'Edit Menu';
   _buildItemCatOptions(m.catId);
@@ -1307,7 +1597,6 @@ function saveMenuItem() {
   const name = g('item-name').value.trim();
   const price = parseInt(g('item-price').value) || 0;
   const catId = g('item-cat').value;
-  const emoji = g('item-emoji').value.trim() || '🍽';
   const desc = g('item-desc').value.trim();
 
   if (!name) { toast('Isi nama menu', 'err'); return; }
@@ -1316,9 +1605,9 @@ function saveMenuItem() {
 
   if (editItemId) {
     const m = menuItems.find(x => x.id === editItemId);
-    if (m) Object.assign(m, { name, price, catId, emoji, desc });
+    if (m) Object.assign(m, { name, price, catId, desc });
   } else {
-    menuItems.push({ id: 'mn' + menuCtr++, name, price, catId, emoji, desc, active: true });
+    menuItems.push({ id: 'mn' + menuCtr++, name, price, catId, desc, active: true });
   }
   syncSettings();
   closeModal('m-item');
@@ -1348,6 +1637,15 @@ function renderSettings() {
   se('set-store-name', storeName);
   se('set-store-addr', storeAddr);
   se('set-store-wa', storeWa);
+  se('set-store-footer', storeFooter);
+  se('set-receipt-link', receiptLink);
+
+  // Printer width radio
+  document.querySelectorAll('input[name="printer-width"]').forEach(r => {
+    r.checked = (r.value === String(printerWidth));
+  });
+
+  _renderLogoPreview();
 
   renderEmpList();
   renderOutletList();
@@ -1357,8 +1655,108 @@ function saveStoreInfo() {
   storeName = g('set-store-name').value.trim() || storeName;
   storeAddr = g('set-store-addr').value.trim();
   storeWa = g('set-store-wa').value.trim();
+  const ft = g('set-store-footer');
+  if (ft) storeFooter = ft.value.trim();
+  const rl = g('set-receipt-link');
+  if (rl) receiptLink = rl.value.trim();
+  const pw = document.querySelector('input[name="printer-width"]:checked');
+  if (pw) printerWidth = pw.value;
   syncSettings();
   toast('Informasi toko disimpan');
+}
+
+// ─── Receipt Logo ─────────────────────────────────────────────────────────────
+
+function _renderLogoPreview() {
+  const wrap = g('logo-preview');
+  if (!wrap) return;
+  if (storeLogoBW) {
+    wrap.innerHTML = `<img src="${storeLogoBW}" alt="Logo BW" style="max-width:120px;max-height:120px;background:#fff;padding:6px;border:1px solid var(--b2);border-radius:6px">
+      <button type="button" class="btn btn-sec btn-sm" onclick="removeStoreLogo()" style="margin-left:12px">Hapus Logo</button>`;
+  } else {
+    wrap.innerHTML = `<div style="font-size:12px;color:var(--t2)">Belum ada logo. Upload gambar untuk ditampilkan di atas struk.</div>`;
+  }
+}
+
+function onLogoFilePicked(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { toast('File harus berupa gambar', 'err'); return; }
+  if (file.size > 3 * 1024 * 1024) { toast('Ukuran logo maksimal 3 MB', 'err'); return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const { color, bw } = _logoToBW(img);
+      storeLogo = color;
+      storeLogoBW = bw;
+      syncSettings();
+      _renderLogoPreview();
+      toast('Logo disimpan');
+      input.value = '';
+    };
+    img.onerror = () => toast('Gagal membaca gambar', 'err');
+    img.src = ev.target.result;
+  };
+  reader.onerror = () => toast('Gagal membaca file', 'err');
+  reader.readAsDataURL(file);
+}
+
+function removeStoreLogo() {
+  if (!confirm('Hapus logo struk?')) return;
+  storeLogo = '';
+  storeLogoBW = '';
+  syncSettings();
+  _renderLogoPreview();
+  toast('Logo dihapus');
+}
+
+// Downscale + threshold to pure B/W (1-bit look, stored as PNG data URL).
+function _logoToBW(img) {
+  const maxW = 384; // matches ~58mm printer raster; scales down on 55mm and up-fits on 80mm
+  const scale = Math.min(1, maxW / img.width);
+  const w = Math.max(8, Math.round(img.width * scale));
+  const h = Math.max(8, Math.round(img.height * scale));
+
+  // Color-preserved (downscaled) version for reference
+  const cv1 = document.createElement('canvas');
+  cv1.width = w; cv1.height = h;
+  const cx1 = cv1.getContext('2d');
+  cx1.fillStyle = '#fff'; cx1.fillRect(0, 0, w, h);
+  cx1.drawImage(img, 0, 0, w, h);
+  const color = cv1.toDataURL('image/png');
+
+  // BW threshold version
+  const cv2 = document.createElement('canvas');
+  cv2.width = w; cv2.height = h;
+  const cx2 = cv2.getContext('2d');
+  cx2.fillStyle = '#fff'; cx2.fillRect(0, 0, w, h);
+  cx2.drawImage(img, 0, 0, w, h);
+  const imgData = cx2.getImageData(0, 0, w, h);
+  const px = imgData.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const alpha = px[i + 3];
+    const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    // Transparent → white; else threshold at ~150 (a bit lenient so line art stays)
+    const black = alpha > 100 && lum < 150;
+    const v = black ? 0 : 255;
+    px[i] = px[i + 1] = px[i + 2] = v;
+    px[i + 3] = 255;
+  }
+  cx2.putImageData(imgData, 0, 0);
+  const bw = cv2.toDataURL('image/png');
+
+  return { color, bw };
+}
+
+// Printer columns for monospace formatting (Bluetooth ESC/POS)
+function printerCols() {
+  return String(printerWidth) === '55' ? 32 : 48;
+}
+
+// Printer paper width in mm (for browser print CSS)
+function printerPaperMM() {
+  return String(printerWidth) === '55' ? 55 : 80;
 }
 
 async function changeOwnerPwd() {

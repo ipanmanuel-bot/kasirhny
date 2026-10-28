@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#2563EB"/>
+  <!-- safe zone: inner 80% (centered ~ x:52 y:52 w:408 h:408) -->
+  <g transform="translate(96 128)" fill="#ffffff">
+    <!-- receipt body -->
+    <path d="M32 0 h256 a16 16 0 0 1 16 16 v220 l-24 -18 -24 18 -24 -18 -24 18 -24 -18 -24 18 -24 -18 -24 18 -24 -18 -24 18 v-220 a16 16 0 0 1 16 -16 z"/>
+    <!-- lines on receipt (blue) -->
+    <g fill="#2563EB">
+      <rect x="56" y="48" width="208" height="16" rx="4"/>
+      <rect x="56" y="80" width="160" height="10" rx="3"/>
+      <rect x="56" y="112" width="208" height="8" rx="3"/>
+      <rect x="56" y="132" width="120" height="8" rx="3"/>
+      <rect x="56" y="152" width="180" height="8" rx="3"/>
+      <rect x="56" y="184" width="208" height="12" rx="3"/>
+    </g>
+  </g>
+</svg>
